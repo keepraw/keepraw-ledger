@@ -9,6 +9,7 @@ import { historyRow, workbookBytes } from './fixtures/legacyWorkbook'
 import { LEGACY_UNIFIED_COLUMNS } from '../src/importers/legacyPythonExportV1'
 import { ingestSynthetic, syntheticStatement } from './fixtures/identity'
 import * as registry from '../src/parsers/registry'
+import { readLedgerRevision } from '../src/db/ledgerRevision'
 
 let app: ReturnType<typeof useApp>
 function Probe() { app = useApp(); return null }
@@ -133,5 +134,13 @@ describe('AUD-005 cross-context import and clear', () => {
     const second = ingestParsedStatement(next, { fileName: 'second.txt', fileHash: 'second', fileSize: 1, sourceType: 'text' }, before)
     await expect(repository.persistImportResults([second])).rejects.toThrow(/银行汇总.*冲突/)
     expect(await repository.readSnapshot()).toEqual(before)
+  })
+  it('a delayed evidence warning preserves the latest import metadata', async () => {
+    const seed = ingestSynthetic(['消费 合成证据'], 'evidence')
+    await repository.persistImportResults([seed])
+    await db.imports.put({ ...seed.record, status: 'duplicate', transactionCount: 0, message: 'Synthetic latest import result' })
+    await repository.markImportEvidenceMissing({ ...seed.record, message: 'stale warning' }, (await readLedgerRevision()).generation)
+    expect(await db.imports.get(seed.record.id)).toMatchObject({ status: 'duplicate', transactionCount: 0,
+      message: 'Synthetic latest import result，原始文件未保留，可稍后重新导入。' })
   })
 })
