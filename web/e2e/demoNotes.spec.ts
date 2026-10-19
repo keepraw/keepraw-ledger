@@ -41,15 +41,16 @@ test('demo notes never expose or modify real and orphan notes, IndexedDB or V2 b
   expect(during.backup.reviewNotes).toEqual(before.backup.reviewNotes)
   expect(JSON.stringify(during.backup)).not.toContain('DEMO_SYNTHETIC_NOTE')
   const zip = await page.evaluate(async () => {
-    const archiveUrl = '/src/backup/archive.ts', zipUrl = '/node_modules/jszip/dist/jszip.min.js'
-    const { buildFullBackupZip } = await import(archiveUrl)
-    const JSZip = (await import(zipUrl)).default
-    const archive = await JSZip.loadAsync(await (await buildFullBackupZip()).blob.arrayBuffer())
-    return archive.file('database.json').async('string')
+    const archiveUrl = '/src/backup/archive.ts'
+    const { buildFullBackupZip, previewFullBackupZip } = await import(archiveUrl)
+    return JSON.stringify((await previewFullBackupZip((await buildFullBackupZip()).blob)).database)
   })
   expect(zip).toContain('REAL_SYNTHETIC_PRIVATE_NOTE')
   expect(zip).toContain('ORPHAN_SYNTHETIC_PRIVATE_NOTE')
   expect(zip).not.toContain('DEMO_SYNTHETIC_NOTE')
+  await page.reload()
+  await expect(page.getByText('DEMO_SYNTHETIC_NOTE', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('REAL_SYNTHETIC_PRIVATE_NOTE', { exact: true })).toHaveCount(0)
   await page.goto('/#/settings')
   await page.getByTestId('demo-toggle').uncheck()
   await page.goto('/#/review')
