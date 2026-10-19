@@ -17,7 +17,7 @@ export interface LedgerRevision { version: number; generation: number; writer: s
 
 export class LedgerConflictError extends Error {
   constructor(readonly cleared = false) {
-    super(cleared ? '账本已被其他标签页清除，本次导入已回滚。请确认后重新导入。'
+    super(cleared ? '账本已被其他标签页清除，本次导入已取消。请确认后重新导入。'
       : '其他标签页正在修改账本，本次操作已回滚。请稍后重试。')
     this.name = 'LedgerConflictError'
   }

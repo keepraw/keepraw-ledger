@@ -481,9 +481,14 @@ export async function saveOriginalFile(input: {
 
 /** Evidence warnings may annotate an existing import; they never recreate a cleared row. */
 export async function markImportEvidenceMissing(record: ImportRecord, generation: number): Promise<void> {
-  await db.transaction('rw', db.imports, db.settings, async () => {
+  await db.transaction('rw', db.imports, db.settings, db.attachments, async () => {
     if ((await readLedgerRevision()).generation !== generation) return
-    if (await db.imports.get(record.id)) await db.imports.put(record)
+    if (await db.attachments.get(record.fileHash)) return
+    const current = await db.imports.get(record.id)
+    const warning = '原始文件未保留，可稍后重新导入。'
+    if (current && !current.message.includes(warning)) {
+      await db.imports.put({ ...current, message: `${current.message}，${warning}` })
+    }
   })
 }
 
