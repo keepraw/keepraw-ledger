@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { desensitizeDescription, desensitizeRawText, KNOWN_PREFIXES, normalizeWebStatement } from '../src/golden/normalize'
 import { syntheticStatement } from './fixtures/identity'
+import { transactionFingerprint } from '../src/core/identity'
 
 const CARD_FORMS = ['4111111111111111', '4111 1111 1111 1111', '4111-1111-1111-1111',
   '4111\u00a01111\u00a01111\u00a01111', '4111–1111–1111–1111', '3782 822463 10005', '6011-0009-9013-9424-123']
@@ -45,7 +46,9 @@ describe('AUD-013 synthetic-only privacy regressions', () => {
       row.rawText = `消费合成姓名合成商户 4111-1111-1111-1111 账户 ACCOUNT_SYNTHETIC_001 Li Wu ${index}`
     })
     const before = structuredClone(parsed)
-    const ids = parsed.transactions.map((_, i) => `abcdef0123456789#${i + 1}`)
+    const ids = parsed.transactions.map(row => transactionFingerprint({ bank: parsed.bank, cardLast4: row.cardLast4!,
+      transactionDate: row.transactionDate, postingDate: row.postingDate, settlementCurrency: row.settlementCurrency,
+      settlementAmountMinor: row.settlementAmountMinor, type: row.type, description: row.description }))
     const normalized = normalizeWebStatement(parsed, ids)
     expect(normalized).toEqual(normalizeWebStatement(parsed, ids))
     expect(normalized.transactionCount).toBe(4)
@@ -62,6 +65,17 @@ describe('AUD-013 synthetic-only privacy regressions', () => {
     const parsed = syntheticStatement(['消费 合成门店'])
     parsed.parserId = 'boc_pdf'
     parsed.cardLast4 = '4111-1111-1111-1111'
+    expect(() => normalizeWebStatement(parsed, ['abcdef0123456789#1'])).toThrow()
+  })
+  it('does not accept a full card number disguised as a hexadecimal native identifier', () => {
+    const parsed = syntheticStatement(['消费 合成门店'])
+    parsed.parserId = 'boc_pdf'
+    expect(() => normalizeWebStatement(parsed, ['4111111111111111'])).toThrow()
+  })
+  it('does not publish arbitrary source text through debug position metadata', () => {
+    const parsed = syntheticStatement(['消费 合成门店'])
+    parsed.parserId = 'boc_pdf'
+    parsed.transactions[0]!.sourceRow = 'SYNTHETIC_ACCOUNT_IDENTIFIER' as never
     expect(() => normalizeWebStatement(parsed, ['abcdef0123456789#1'])).toThrow()
   })
 })
