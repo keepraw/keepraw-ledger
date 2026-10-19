@@ -5,7 +5,7 @@
  * helpers read-only; changes nothing about them.
  */
 
-import { normalizeDescription } from '../core/identity'
+import { normalizeDescription, transactionFingerprint } from '../core/identity'
 import type { ParsedStatement, ParsedTransaction } from '../parsers/types'
 import { GOLDEN_GENERATOR_WEB, GOLDEN_SCHEMA, type Direction, type GoldenStatement, type NormalizedTransaction } from './schema'
 
@@ -70,53 +70,24 @@ export const KNOWN_PREFIXES = [
   '贷记',
 ] as const
 
-const STRUCTURAL_KEYWORDS = [
-  '中国农业银行',
-  '中国建设银行',
-  '中国工商银行',
-  '中国银行',
-  '交通银行',
-  '中信银行',
-  '农业银行',
-  '建设银行',
-  '工商银行',
-  '信用卡',
-  '电子账单',
-  '电子对账单',
-  '客户对账单',
-  '账单周期',
-  '交易明细',
-  '交易日期',
-  '入账日期',
-  '银行记账日',
-  '交易日',
-  '记账日',
-  '卡号后四位',
-  '交易描述',
-  '交易金额',
-  '记账金额',
-  '币种',
-  '还款',
-  '退货',
-  '退款',
-  '消费',
-  '取现',
-  '存入',
-  '支出',
-  '温馨提示',
-  '积分统计',
-  '刷卡金统计',
-] as const
+// Raw debug text has no reliable boundary between names, account identifiers
+// and merchant prose. The helper returns only complete financial token pairs
+// and ISO dates; shareable statements omit source debug text altogether.
+const CURRENCY_TOKEN = '(?:CNY|RMB|USD|HKD|EUR|JPY|GBP|AUD|CAD|SGD|CHF)'
+const DECIMAL_TOKEN = '[+-]?(?:\\d{1,3}(?:,\\d{3})+|\\d{1,12})\\.\\d{2}'
+const RAW_FINANCIAL_TOKENS = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${CURRENCY_TOKEN}\\s*${DECIMAL_TOKEN}|${DECIMAL_TOKEN}\\s*[/ ]\\s*${CURRENCY_TOKEN}|(?:19|20)\\d{2}-\\d{2}-\\d{2})(?![\\p{L}\\p{N}_])`, 'gu',
+)
+const BANK_IDS = new Set(['boc', 'icbc', 'abc', 'ccb', 'bocom', 'citic'])
+const PARSER_IDS = new Set(['boc_pdf', 'icbc_eml', 'abc_eml', 'ccb_eml', 'bocom_eml', 'citic_eml'])
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-const CJK_RUN = /[一-鿿]{2,}/g
-const LONG_DIGITS = /\d{16,}/g
-const LATIN_RUN = /[A-Za-z]{3,}/g
-/** Latin tokens kept verbatim in debug rawText (currencies, bank ids, signs). */
-const LATIN_ALLOW = new Set([
-  'CNY', 'RMB', 'USD', 'HKD', 'CHN', 'EUR', 'JPY', 'GBP', 'AUD',
-  'CAD', 'SGD', 'CHF', 'CR', 'DR',
-  'BOC', 'BOCOM', 'ICBC', 'CCB', 'ABC', 'CITIC',
-])
+function requireSafeScope(valid: boolean): void {
+  if (!valid) throw new Error('Golden structural field is invalid; no shareable output can be generated.')
+}
+
+function safeCard(value: string): boolean { return value === '' || /^\d{4}$/.test(value) }
+function safeDate(value: string | null): boolean { return value === null || value === '' || ISO_DATE.test(value) }
 
 function splitPrefix(description: string): [string, string] {
   for (const prefix of KNOWN_PREFIXES) {
@@ -132,22 +103,14 @@ export function desensitizeDescription(description: string): string {
   const [prefix, rest] = splitPrefix(text)
   if (!rest) return prefix
   const key = rest.replace(/\s+/g, ' ').trim()
-  const placeholder = `商户_${fnv1a32(key)}`
+  const placeholder = /^商户_[0-9a-f]{8}$/.test(key) ? key : `商户_${fnv1a32(key)}`
   return prefix ? `${prefix} ${placeholder}` : placeholder
 }
 
-/** Mask non-structural CJK runs and long digit runs; keep layout/amounts/dates. */
+/** Financial-only debug projection; no free-form CJK/Latin/digit allow-through. */
 export function desensitizeRawText(rawText: string): string {
-  if (!rawText) return rawText
-  const masked = rawText.replace(CJK_RUN, (run) => {
-    if (STRUCTURAL_KEYWORDS.some((keyword) => run.includes(keyword))) return run
-    for (const prefix of KNOWN_PREFIXES) {
-      if (run.startsWith(prefix)) return prefix + (run.length > prefix.length ? '██' : '')
-    }
-    return '██'
-  })
-  const latinMasked = masked.replace(LATIN_RUN, (run) => (LATIN_ALLOW.has(run.toUpperCase()) ? run : '██'))
-  return latinMasked.replace(LONG_DIGITS, '****************')
+  return [...(rawText ?? '').matchAll(RAW_FINANCIAL_TOKENS)]
+    .map(match => match[0].replace(/\s+/g, ' ')).join(' | ')
 }
 
 export function directionForMinor(minor: number): Direction {
@@ -162,6 +125,19 @@ export function normalizeWebTransaction(
   options: { desensitize?: boolean; bank?: string } = {},
 ): NormalizedTransaction {
   const desensitize = options.desensitize ?? true
+  if (desensitize) {
+    requireSafeScope((!options.bank || BANK_IDS.has(options.bank)) && safeCard(tx.cardLast4 ?? '') &&
+      safeDate(tx.transactionDate) && safeDate(tx.postingDate) && /^[A-Za-z]{3}$/.test(tx.settlementCurrency) &&
+      (fingerprint === '' || /^[0-9a-f]{16}(?:#[1-9]\d*)?$/.test(fingerprint)) &&
+      /^(?:boc|icbc|abc|ccb|bocom|citic):(?:\d{4})?:(?:\d{4}-\d{2}-\d{2})?:(?:\d{4}-\d{2}-\d{2})?$/.test(statementKey))
+    const expected = transactionFingerprint({ bank: options.bank ?? '', cardLast4: tx.cardLast4 || statementKey.split(':')[1] || '????',
+      transactionDate: tx.transactionDate, postingDate: tx.postingDate, settlementCurrency: tx.settlementCurrency,
+      settlementAmountMinor: tx.settlementAmountMinor, type: tx.type, description: tx.description })
+    // A 16-digit card number also looks like hex. Only a genuine computed
+    // fingerprint may pass, never arbitrary caller-supplied source identifiers.
+    requireSafeScope(Number.isSafeInteger(tx.settlementAmountMinor) && (fingerprint === '' || fingerprint.split('#')[0] === expected) &&
+      Number.isSafeInteger(seq) && [tx.sourcePage, tx.sourceRow].every(value => value === null || Number.isSafeInteger(value)))
+  }
   const description = desensitize ? desensitizeDescription(tx.description) : tx.description
   return {
     bank: options.bank ?? '',
@@ -173,7 +149,7 @@ export function normalizeWebTransaction(
     direction: directionForMinor(tx.settlementAmountMinor),
     description,
     normalizedDescription: normalizeDescription(description),
-    rawText: desensitize ? desensitizeRawText(tx.rawText) : tx.rawText,
+    rawText: desensitize ? '' : tx.rawText,
     sourcePosition: { row: seq, page: tx.sourcePage, sourceRow: tx.sourceRow },
     nativeId: fingerprint,
     statementKey,
@@ -185,6 +161,10 @@ export function normalizeWebStatement(
   fingerprints: string[],
   options: { desensitize?: boolean } = {},
 ): GoldenStatement {
+  if (options.desensitize ?? true) {
+    requireSafeScope(BANK_IDS.has(statement.bank) && PARSER_IDS.has(statement.parserId) &&
+      safeCard(statement.cardLast4 ?? '') && safeDate(statement.cycleStart) && safeDate(statement.cycleEnd))
+  }
   const key = `${statement.bank}:${statement.cardLast4}:${statement.cycleStart ?? ''}:${statement.cycleEnd ?? ''}`
   const transactions = statement.transactions.map((tx, index) =>
     normalizeWebTransaction(tx, fingerprints[index] ?? '', key, index, { desensitize: options.desensitize, bank: statement.bank }),

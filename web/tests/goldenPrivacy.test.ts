@@ -76,6 +76,10 @@ describe('AUD-013 synthetic-only privacy regressions', () => {
     const parsed = syntheticStatement(['消费 合成门店'])
     parsed.parserId = 'boc_pdf'
     parsed.transactions[0]!.sourceRow = 'SYNTHETIC_ACCOUNT_IDENTIFIER' as never
-    expect(() => normalizeWebStatement(parsed, ['abcdef0123456789#1'])).toThrow()
+    const row = parsed.transactions[0]!
+    const id = transactionFingerprint({ bank: parsed.bank, cardLast4: row.cardLast4!, transactionDate: row.transactionDate,
+      postingDate: row.postingDate, settlementCurrency: row.settlementCurrency, settlementAmountMinor: row.settlementAmountMinor,
+      type: row.type, description: row.description })
+    expect(() => normalizeWebStatement(parsed, [id])).toThrow()
   })
 })

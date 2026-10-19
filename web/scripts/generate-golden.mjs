@@ -10,8 +10,10 @@ const server = await createServer({
 try {
   const { main } = await server.ssrLoadModule('/scripts/generate-golden.ts')
   process.exitCode = await main()
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error)
+} catch {
+  // Parser errors and filenames can contain identifying source text. Keep
+  // command-line failures useful without echoing those strings into CI logs.
+  console.error('Golden generation failed; source details are not logged. Run without --no-desensitize and verify input format and input.meta.json SHA-256 locally.')
   process.exitCode = 2
 } finally {
   await server.close()

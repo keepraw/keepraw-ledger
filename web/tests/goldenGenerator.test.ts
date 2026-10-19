@@ -25,6 +25,19 @@ it('runs the TypeScript Golden generator on a synthetic source without Python', 
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }, 30_000)
 
+it('CLI retains source SHA-256 validation and never overwrites a reference on mismatch', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'keepraw-golden-meta-'))
+  try {
+    const input = join(dir, 'synthetic.html')
+    writeFileSync(input, SYNTHETIC_CCB_HTML)
+    writeFileSync(join(dir, 'input.meta.json'), JSON.stringify({ sha256: '0'.repeat(64) }))
+    writeFileSync(join(dir, 'web.json'), 'synthetic existing reference')
+    expect(() => execFileSync(process.execPath, ['scripts/generate-golden.mjs', '--input', input, '--out', dir], { encoding: 'utf8', stdio: 'pipe' })).toThrow()
+    expect(readFileSync(join(dir, 'web.json'), 'utf8')).toBe('synthetic existing reference')
+    expect(readFileSync(input, 'utf8')).toBe(SYNTHETIC_CCB_HTML)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}, 30_000)
+
 it('CLI errors do not print source filenames or source text', () => {
   const dir = mkdtempSync(join(tmpdir(), 'keepraw-golden-error-'))
   try {
