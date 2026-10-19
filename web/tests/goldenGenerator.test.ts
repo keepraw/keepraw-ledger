@@ -41,7 +41,7 @@ it('CLI never publishes synthetic identifying source text and keeps independentl
   const dir = mkdtempSync(join(tmpdir(), 'keepraw-golden-privacy-'))
   try {
     const input = join(dir, 'SYNTHETIC_PRIVATE_FILENAME.html'), out = join(dir, 'output')
-    const html = SYNTHETIC_CCB_HTML.replace('消费 示例餐厅', '消费合成姓名合成商户 4111-1111-1111-1111 账户ACCOUNT_SYNTHETIC_001 Li Wu')
+    const html = SYNTHETIC_CCB_HTML.replace('示例餐厅-消费测试店', '消费合成姓名合成商户 4111-1111-1111-1111 账户ACCOUNT_SYNTHETIC_001 Li Wu')
     expect(html).not.toBe(SYNTHETIC_CCB_HTML)
     writeFileSync(input, html)
     const stdout = execFileSync(process.execPath, ['scripts/generate-golden.mjs', '--input', input, '--out', out], { encoding: 'utf8' })
