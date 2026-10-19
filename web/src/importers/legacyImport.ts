@@ -5,7 +5,7 @@ import { reconcileStatement } from '../core/reconcile'
 import { deriveStatementState } from '../core/statementState'
 import type { ImportRecord, Statement, Transaction } from '../core/types'
 import { emptySummary } from '../parsers/types'
-import { sha256Hex } from '../parsers/extract'
+import { assertSourceFileSize, sha256Hex } from '../parsers/extract'
 import { LEGACY_STANDARD_SHEET, detectLegacyShape, parseLegacyRows } from './legacyPythonExportV1'
 import { LEGACY_KEEPRAW_SHEET, detectKeeprawShape, parseKeeprawRows } from './legacyKeeprawExportV1'
 import { LEGACY_UNIFIED_BILL_SHEET, detectUnifiedBillShape, parseUnifiedBillRows } from './legacyUnifiedBillV1'
@@ -302,6 +302,8 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
 
 /** Hash the raw upload so repeat files are recognised before any work happens. */
 export async function hashLegacyFile(file: { size: number; arrayBuffer(): Promise<ArrayBuffer> }) {
+  assertSourceFileSize(file.size)
   const buffer = await file.arrayBuffer()
+  assertSourceFileSize(buffer.byteLength)
   return { buffer, fileHash: await sha256Hex(buffer) }
 }

@@ -35,7 +35,7 @@ import type { LegacyPreview } from '../importers/types'
 import { ingestParsedStatement, failedImportRecord, unsupportedRecord, type IngestMeta, type IngestResult } from '../core/ingest'
 import type { ParsedStatement } from '../parsers/types'
 import { LedgerConflictError, readLedgerRevision, subscribeLedgerChanges } from '../db/ledgerRevision'
-import { buildSourceDocument, sha256Hex } from '../parsers/extract'
+import { assertSourceFileSize, buildSourceDocument, MAX_IMPORT_BATCH_BYTES, sha256Hex } from '../parsers/extract'
 import { detectParser, parseDocument, UnsupportedFileError } from '../parsers/registry'
 import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/types'
 import { triggerDownload } from '../export/tabular'
@@ -183,6 +183,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if ((await loadSettings()).demoMode) {
         throw new Error('演示模式下无法导入真实账单，请先在设置中关闭演示模式。')
       }
+      if (files.reduce((total, file) => total + file.size, 0) > MAX_IMPORT_BATCH_BYTES) {
+        throw new Error('本批文件超过 100 MiB 预算，未读取或保存任何文件。请分批导入。')
+      }
       let results: ImportBatchResult[] = []
       const initial = await readImportSnapshot()
       let planningRevision = initial.revision
@@ -193,7 +196,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const meta = { fileName: file.name, fileSize: file.size, sourceType: 'unknown' as const }
         let evidence: ImportBatchResult['evidence']
         try {
+          assertSourceFileSize(file.size)
           const buffer = await readFileWithRetry(file)
+          assertSourceFileSize(buffer.byteLength)
           setProgress({ fileName: file.name, index, total: files.length, phase: '计算 SHA-256' })
           const fileHash = await sha256Hex(buffer)
           // Bind evidence before parsing: extraction failures must retain the

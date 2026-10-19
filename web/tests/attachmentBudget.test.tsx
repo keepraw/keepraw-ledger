@@ -6,6 +6,7 @@ import { hashLegacyFile } from '../src/importers/legacyImport'
 import { saveOriginalFile } from '../src/db/repository'
 import * as repository from '../src/db/repository'
 import { readLedgerRevision } from '../src/db/ledgerRevision'
+import { buildFullBackupZip } from '../src/backup/archive'
 
 let app: ReturnType<typeof useApp>
 function Probe() { app = useApp(); return null }
@@ -62,6 +63,15 @@ it('accepts the 25 MiB upload boundary for reading', async () => {
   expect(input.arrayBuffer).toHaveBeenCalledOnce()
 })
 
+it('retains the exact 64 MiB evidence boundary without truncating it', async () => {
+  const data = new ArrayBuffer(64 * 1024 * 1024)
+  new Uint8Array(data)[data.byteLength - 1] = 7
+  await saveOriginalFile({ data, fileHash: 'synthetic-boundary', fileName: 'synthetic.bin', importId: 'synthetic', parserId: 'synthetic' })
+  const saved = await db.attachments.get('synthetic-boundary')
+  expect(saved!.data.byteLength).toBe(data.byteLength)
+  expect(new Uint8Array(saved!.data)[data.byteLength - 1]).toBe(7)
+})
+
 it('external choices preserve bytes, participate in revisions and roll back on failure', async () => {
   await saveOriginalFile({ data: new Uint8Array([1, 2, 3]).buffer, fileHash: 'synthetic', fileName: 'synthetic.bin', importId: 'synthetic', parserId: 'synthetic' })
   const before = await db.attachments.get('synthetic')
@@ -76,4 +86,18 @@ it('external choices preserve bytes, participate in revisions and roll back on f
   expect(await readLedgerRevision()).toEqual(current)
   expect(await repository.isArchiveFileExternal('synthetic')).toBe(true)
   expect(await db.attachments.get('synthetic')).toEqual(before)
+  vi.restoreAllMocks()
+  await repository.setArchiveFileExternal('synthetic', false, current)
+  expect(await repository.isArchiveFileExternal('synthetic')).toBe(false)
+  expect(await db.attachments.get('synthetic')).toEqual(before)
+})
+
+it('rejects a ZIP if an external choice changes during its construction', async () => {
+  await saveOriginalFile({ data: new ArrayBuffer(0), fileHash: 'synthetic', fileName: 'synthetic.bin', importId: 'synthetic', parserId: 'synthetic' })
+  const payload = await repository.exportDataBackup()
+  vi.spyOn(repository, 'exportDataBackup').mockImplementationOnce(async () => {
+    await repository.setArchiveFileExternal('synthetic', true, await readLedgerRevision())
+    return payload
+  })
+  await expect(buildFullBackupZip()).rejects.toThrow(/其他标签页/)
 })

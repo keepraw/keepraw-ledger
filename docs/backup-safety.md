@@ -140,3 +140,11 @@ cannot restore notes that were never exported. ZIP attachment `importedAt` in
 fresh restores continues to follow the existing V1 restore contract
 (reconstructed when missing); existing restores and migrations still require
 stored timestamps to remain exact.
+
+## 超限附件与完整备份恢复（AUD-014）
+
+新上传的银行账单和历史文件在完整读取、计算 SHA-256、复制原件前检查 25 MiB 单文件预算；银行账单每批另有 100 MiB 预算。明确拒绝的文件不进入原始附件。已有附件不自动删除或截断；JSON 数据备份不受附件大小影响。
+
+完整 ZIP 保持 64 MiB 单原件、256 MiB 总量及既有校验限制。设置页会显示导出错误和恢复建议。若旧原件或原件总量超限：先导出 JSON，再在“原始文件管理”下载并保存相关原件，明确确认“设为外部保存”后重试 ZIP。此选择可撤回，不删除本机原件，也不修改交易、导入记录或复核备注。ZIP 的 manifest 使用既有 `external` 状态，导出和恢复均提示这些原件需另外保管；它们不会被静默当作已包含在 ZIP。新设备恢复金融数据后，外部原件仍需用户单独保存。
+
+外部保存偏好是本机内部设置，不进入 JSON 的应用设置。修改与 AUD-005 共用提交版本事务：过期选择回滚并提示刷新；并发导入重新规划；清空代际保护仍生效。ZIP 构建期间如账本或外部保存选择变化，拒绝下载混合版本备份，用户可重试。取消确认不写入任何状态。

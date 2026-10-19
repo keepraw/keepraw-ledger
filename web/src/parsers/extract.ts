@@ -4,7 +4,14 @@ import type { PdfDocument, PdfPage, PdfTextItem, SourceDocument, SourceType } fr
 
 /** 25 MB. Real statements are far below this; anything larger is refused early. */
 export const MAX_FILE_SIZE = 25 * 1024 * 1024
+export const MAX_IMPORT_BATCH_BYTES = 100 * 1024 * 1024
 export const MAX_PDF_PAGES = 60
+
+/** Check metadata before any full read, hash or retained evidence copy. */
+export function assertSourceFileSize(size: number): void {
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error('文件大小无效，已拒绝读取。')
+  if (size > MAX_FILE_SIZE) throw new ExtractionError('文件超过 25 MiB 上限，未读取或保存原始文件。请拆分文件后重新导入。', 'file_too_large')
+}
 
 export class ExtractionError extends Error {
   constructor(
@@ -44,9 +51,7 @@ export async function buildSourceDocument(input: {
   fileHash: string
 }): Promise<SourceDocument> {
   const bytes = new Uint8Array(input.buffer)
-  if (bytes.byteLength > MAX_FILE_SIZE) {
-    throw new ExtractionError('文件超过 25 MB 上限，已拒绝解析', 'file_too_large')
-  }
+  assertSourceFileSize(bytes.byteLength)
   if (bytes.byteLength === 0) {
     throw new ExtractionError('文件为空', 'empty_file')
   }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../../app/AppStore'
-import { storageEstimate, type ArchiveStatus } from '../../db/repository'
+import { getAttachment, listArchiveFiles, setArchiveFileExternal, storageEstimate, type ArchiveStatus } from '../../db/repository'
+import { triggerDownload } from '../../export/tabular'
 import { getDemoSnapshot } from '../../demo/demoStore'
 import { parserCatalog } from '../../parsers/registry'
 import { Badge, DemoBadge } from '../components/ui'
@@ -10,6 +11,8 @@ export function SettingsPage() {
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null)
   const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null)
   const [status, setStatus] = useState<ArchiveStatus | null>(null)
+  const [archiveFiles, setArchiveFiles] = useState<Awaited<ReturnType<typeof listArchiveFiles>> | null>(null)
+  const [backupError, setBackupError] = useState<string | null>(null)
   const restoreRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -19,6 +22,31 @@ export function SettingsPage() {
   useEffect(() => {
     void archiveStatus().then(setStatus).catch(() => setStatus(null))
   }, [archiveStatus, state.demoMode, state.statements.length, state.transactions.length, state.imports.length])
+
+  useEffect(() => {
+    void listArchiveFiles().then(setArchiveFiles).catch(() => setArchiveFiles(null))
+  }, [state.imports])
+
+  const changeExternal = async (fileHash: string, external: boolean) => {
+    if (!archiveFiles) return
+    if (external && !window.confirm('请先下载并妥善保存原始文件。设为外部保存后，ZIP 将明确标记 external 且不包含此原件，恢复原件需要单独保存的文件。本机原件、交易和备注均保留。继续吗？')) return
+    try {
+      await setArchiveFileExternal(fileHash, external, archiveFiles.revision)
+      setArchiveFiles(await listArchiveFiles())
+      setMessage({ tone: 'ok', text: external ? '已设为外部保存；本机原件未删除。' : '已恢复包含在 ZIP 中。' })
+    } catch (error) {
+      setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '保存失败，请刷新后重试。' })
+      setArchiveFiles(await listArchiveFiles())
+    }
+  }
+
+  const downloadOriginal = async (fileHash: string) => {
+    try {
+      const row = await getAttachment(fileHash)
+      if (!row) throw new Error('原始文件已不存在，请刷新后重试。')
+      triggerDownload(new Blob([row.data], { type: row.mimeType }), row.fileName)
+    } catch (error) { setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '下载失败，请重试。' }) }
+  }
 
   const realCounts = {
     statements: state.statements.filter((s) => !s.isDemo).length,
@@ -206,12 +234,13 @@ export function SettingsPage() {
                 type="button"
                 data-testid="backup-full"
                 onClick={() => {
+                  setBackupError(null)
                   void backupFull().then(({ warning }) =>
                     setMessage({
                       tone: 'ok',
                       text: warning ? `完整归档已导出。${warning}。` : '完整归档已导出，含全部可访问原始文件。',
                     }),
-                  )
+                  ).catch((error: unknown) => setBackupError(`完整备份失败：${error instanceof Error ? error.message : '未知导出错误'}。请先导出备份 JSON；若文件过大或总量超限，在原始文件管理中下载原件并选择外部保存后重试；若校验失败，请核对原件。`))
                 }}
               >
                 导出完整备份
@@ -233,6 +262,23 @@ export function SettingsPage() {
                 }}
               />
             </div>
+            {backupError ? <div className="notice notice-danger" role="alert" data-testid="backup-error">{backupError}</div> : null}
+            {archiveFiles && archiveFiles.files.length > 0 ? (
+              <div className="stack">
+                <h3>原始文件管理</h3>
+                <p className="subtle">ZIP 单文件上限 64 MiB、总量上限 256 MiB。超限时可先下载原件，再由你选择外部保存。外部保存不会删除本机原件或影响 JSON 备份；ZIP 清单会标记 external，恢复原件需要另外保存的文件。</p>
+                {archiveFiles.files.map(file => (
+                  <div className="stack" key={file.fileHash} data-testid="archive-file">
+                    <div>{file.fileName}（{(file.size / 1024 / 1024).toFixed(2)} MiB）</div>
+                    <div>{file.external ? '外部保存，不放入 ZIP' : '包含在 ZIP'}</div>
+                    <div className="row">
+                      <button className="btn btn-sm" type="button" onClick={() => void downloadOriginal(file.fileHash)}>下载原始文件</button>
+                      <button className="btn btn-sm" type="button" onClick={() => void changeExternal(file.fileHash, !file.external)}>{file.external ? '恢复包含在 ZIP' : '设为外部保存'}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {usage ? (
               <p className="subtle">
                 本地存储占用约 {(usage.usage / 1024 / 1024).toFixed(2)} MB / 配额 {(usage.quota / 1024 / 1024).toFixed(0)} MB

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { syntheticStatement } from '../tests/fixtures/identity'
 import { SYNTHETIC_CCB_HTML } from '../tests/fixtures/ccbEml'
+import JSZip from 'jszip'
 
 async function ready(page: Page) {
   await page.goto('/#/settings')
@@ -59,7 +60,7 @@ test('old oversized evidence: actionable export error, cancellation, external ch
   await management.getByRole('button', { name: '下载原始文件' }).click()
   const original = await originalDownload
   expect(original.suggestedFilename()).toBe('synthetic-old-65MiB.pdf')
-  const { stat } = await import('node:fs/promises')
+  const { stat, readFile } = await import('node:fs/promises')
   expect((await stat((await original.path())!)).size).toBe(65 * 1024 * 1024)
   page.once('dialog', dialog => void dialog.accept())
   await management.getByRole('button', { name: '设为外部保存' }).click()
@@ -67,6 +68,10 @@ test('old oversized evidence: actionable export error, cancellation, external ch
   const zipDownload = page.waitForEvent('download')
   await page.getByTestId('backup-full').click()
   const zip = await zipDownload
+  const zipBytes = await readFile((await zip.path())!)
+  const contents = await JSZip.loadAsync(zipBytes)
+  expect(JSON.parse(await contents.file('manifest.json')!.async('string')).files[0].storage).toBe('external')
+  expect(Object.values(contents.files).filter(file => !file.dir && file.name.startsWith('original-files/'))).toHaveLength(0)
   await expect(page.getByText(/完整归档已导出.*外部保存/)).toBeVisible()
   expect(await data(page)).toEqual(before)
   expect(await page.evaluate(async () => {
@@ -76,7 +81,7 @@ test('old oversized evidence: actionable export error, cancellation, external ch
   try {
     const restored = await fresh.newPage()
     await restored.goto('/#/settings')
-    await restored.setInputFiles('input[type="file"][accept*=".json"]', (await zip.path())!)
+    await restored.setInputFiles('input[type="file"][accept*=".json"]', { name: zip.suggestedFilename(), mimeType: 'application/zip', buffer: zipBytes })
     await expect(restored.getByText(/已恢复 1 笔交易.*外部保存/)).toBeVisible()
     expect(await data(restored)).toEqual(before)
     const manifest = await restored.evaluate(async () => {
