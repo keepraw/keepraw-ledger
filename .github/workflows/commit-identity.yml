@@ -1,0 +1,41 @@
+name: Commit identity
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commit-identity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity:
+    name: Verify commit metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      # Run trusted base-branch policy only. Never check out or execute PR code
+      # in this pull_request_target workflow with a status-writing token.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test identity policy
+        run: node --test .github/scripts/check-commit-identity.test.mjs
+      - name: Verify Git metadata and GitHub account attribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-commit-identity.mjs
