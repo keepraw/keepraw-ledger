@@ -2,6 +2,7 @@ import { assignOccurrences, assignStoredOccurrences, detectDuplicates, transacti
 import { statementKey, transactionFingerprint } from '../core/identity'
 import { auditMigrationRows } from '../core/migrationAudit'
 import { reconcileStatement } from '../core/reconcile'
+import { deriveStatementState } from '../core/statementState'
 import type { ImportRecord, Statement, Transaction } from '../core/types'
 import { emptySummary } from '../parsers/types'
 import { sha256Hex } from '../parsers/extract'
@@ -226,15 +227,18 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
   }
 
   const now = new Date().toISOString()
-  const insertedIds = new Set(transactions.map((tx) => tx.id))
-  const counts = new Map<string, number>()
-  for (const tx of stored) counts.set(tx.statementId, (counts.get(tx.statementId) ?? 0) + 1)
+  const byStatement = new Map<string, Transaction[]>()
+  for (const tx of [...stored, ...transactions]) {
+    const group = byStatement.get(tx.statementId) ?? []
+    group.push(tx)
+    byStatement.set(tx.statementId, group)
+  }
   const priorStatements = new Map(existing.statements.filter((row) => !row.isDemo).map((row) => [row.id, row]))
   const statements: Statement[] = duplicateImport ? [] : [...groups.entries()].map(([key, bucket]) => {
     const first = bucket[0]!
-    const transactionCount = (counts.get(key) ?? 0) + bucket.filter((row) => insertedIds.has(row.id)).length
+    const transactionCount = (byStatement.get(key) ?? []).length
     const prior = priorStatements.get(key)
-    if (prior) return { ...prior, transactionCount }
+    if (prior) return deriveStatementState(prior, byStatement.get(key) ?? [])
     // Legacy data carries no balance summary, so reconciliation is honestly
     // `insufficient` — never passed, never faked.
     const reconciliation = reconcileStatement({ summary: emptySummary(), transactions: [] })
