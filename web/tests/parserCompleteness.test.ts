@@ -41,7 +41,8 @@ describe('AUD-008 format-specific transaction completeness', () => {
       const parsed = parser.parse(source)
       expect(parsed.transactions).toHaveLength(baseline.transactions.length)
       expect(parsed.transactions.map(row => row.sourceRow)).toEqual(baseline.transactions.map(row => row.sourceRow))
-      expect(parsed.transactions.find(row => row.description.includes('合成门店'))).toMatchObject({ direction: 'debit', settlementAmountMinor: 6800 })
+      // CITIC's synthetic restaurant is 1200.00; the other fixtures use 68.00.
+      expect(parsed.transactions.find(row => row.description.includes('合成门店'))).toMatchObject({ direction: 'debit', settlementAmountMinor: parser.bank === 'citic' ? 120000 : 6800 })
     })
     it(`${parser.bank}: rejects a recognized row with an invalid transaction date`, () => {
       const source = doc(html)
@@ -52,6 +53,12 @@ describe('AUD-008 format-specific transaction completeness', () => {
       const source = doc(html)
       restaurant(source).pop()
       expect(() => parser.parse(source)).toThrow(/交易行|交易金额/)
+    })
+    it(`${parser.bank}: rejects a recognizable money/card row even when both date cells are unreadable`, () => {
+      const source = doc(html), row = restaurant(source)
+      row[date] = 'unreadable'
+      row[date + 1] = 'unreadable'
+      expect(() => parser.parse(source)).toThrow(/交易行|交易日期/)
     })
   }
   it('CCB: retains all 17 rows including the three USD rows outside the CNY bank total', async () => {

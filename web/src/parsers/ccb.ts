@@ -2,7 +2,7 @@ import { parseDateInput } from '../core/dates'
 import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'ccb_eml'
 const PARSER_VERSION = '1.0.0'
@@ -275,13 +275,19 @@ function collectTransactions(
   for (let i = located.headerRowIndex + 1; i < table.rows.length; i++) {
     const cells = table.rows[i]!
     const joined = cells.join(' ')
-    if (FOOTER_MARKERS.test(joined)) break
-    if (ENGLISH_HEADER.test(joined)) continue
+    // CCB dates occupy the first two columns. Handle candidates before text.
+    const candidate = cells.slice(0, 2).some(cell => /^\d{4}[-/.]?\d/.test(cell)) ||
+      (cells.length >= 6 && /^\d{4}$/.test(cells[2] ?? ''))
+    if (candidate) {
+      const parsed = requireTransactionRow(cells.length === 8 ? parseEightColRow(cells, i, fallbackCardLast4)
+        : cells.length === 6 ? parseSixColRow(cells, i, fallbackCardLast4) : null, i)
+      transactions.push({ ...parsed, sourceRow: transactions.length })
+      continue
+    }
+    if (cells.length <= 2 && FOOTER_MARKERS.test(joined)) break
+    if (cells.filter(cell => ENGLISH_HEADER.test(cell) || TXN_HEADER_CELL.test(cell)).length >= 5) continue
     if (cells.length === 1) continue
     if (cells.length === 3 && /\[.*账户\]|上期账单余额|Previous Balance/.test(joined)) continue
-    if (cells.length !== 6 && cells.length !== 8) continue
-    const parsed = cells.length === 8 ? parseEightColRow(cells, i, fallbackCardLast4) : parseSixColRow(cells, i, fallbackCardLast4)
-    if (parsed) transactions.push({ ...parsed, sourceRow: transactions.length })
   }
   return transactions
 }

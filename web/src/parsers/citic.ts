@@ -2,7 +2,7 @@ import { parseDateInput } from '../core/dates'
 import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'citic_eml'
 const PARSER_VERSION = '1.0.0'
@@ -314,9 +314,15 @@ function collectTransactions(doc: SourceDocument, fallbackCardLast4: string): Pa
   const transactions: ParsedTransaction[] = []
   for (const table of doc.tables) {
     for (const row of table.rows) {
-      if (FOOTER_MARKERS.test(row.join(' '))) continue
-      const parsed = parseRow(row, transactions.length, fallbackCardLast4)
-      if (parsed) transactions.push({ ...parsed, sourceRow: transactions.length })
+      const cells = row[0] === '' && row.length > 7 ? row.slice(1) : row
+      // CITIC dates are YYYYMMDD, and some layouts add a leading empty cell.
+      if (cells.length >= 3 && (cells.slice(0, 2).some(cell => /^\d{8}$/.test(cell)) ||
+        (cells.length >= 6 && /^\d{4}$/.test(cells[2] ?? '') && /^[A-Z]{3}\s*[-\d]/i.test(cells[5] ?? '')))) {
+        const parsed = requireTransactionRow(parseRow(row, transactions.length, fallbackCardLast4), transactions.length)
+        transactions.push({ ...parsed, sourceRow: transactions.length })
+        continue
+      }
+      if (row.length <= 3 && FOOTER_MARKERS.test(row.join(' '))) continue
     }
   }
   return transactions

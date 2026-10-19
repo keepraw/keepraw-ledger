@@ -2,7 +2,7 @@ import { parseDateInput, type IsoDate } from '../core/dates'
 import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'abc_eml'
 const PARSER_VERSION = '1.0.0'
@@ -353,7 +353,15 @@ function collectTransactions(doc: SourceDocument, cycle: Cycle, fallbackCardLast
         continue
       }
       if (!inTxnArea) continue
-      if (FOOTER_MARKERS.test(joined)) {
+      // ABC uses MMDD (or slash dates), with section markers in separate rows.
+      const candidate = row.length > 3 && (row.slice(0, 2).some(cell => /^\d{4}$|^\d{1,4}[-/.]\d/.test(cell)) ||
+        (row.length >= 5 && /^\d{4}$/.test(row[2] ?? '') && /\/[A-Z]{3}/i.test(row[4] ?? '')))
+      if (candidate) {
+        const parsed = requireTransactionRow(row.length === 6 ? parseRow(row, section, cycle, fallbackCardLast4, transactions.length) : null, transactions.length)
+        transactions.push(parsed)
+        continue
+      }
+      if (row.length <= 3 && FOOTER_MARKERS.test(joined)) {
         inTxnArea = false
         break
       }
@@ -362,10 +370,6 @@ function collectTransactions(doc: SourceDocument, cycle: Cycle, fallbackCardLast
         section = sectionMatch[1]!
         continue
       }
-      if (row.length !== 6) continue
-      if (/交易日期|入账日期/.test(joined)) continue
-      const parsed = parseRow(row, section, cycle, fallbackCardLast4, transactions.length)
-      if (parsed) transactions.push(parsed)
     }
   }
   return transactions
