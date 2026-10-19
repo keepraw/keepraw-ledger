@@ -76,6 +76,7 @@ export function ingestParsedStatement(
     const fingerprint = fingerprints[index]!
     const occurrence = occurrences[index]!.occurrence
     const flags: ReviewFlag[] = []
+    if (tx.typeUncertain) flags.push('transaction_type_unclear')
     if (tx.confidence < 0.8) flags.push('low_confidence')
     if (!tx.transactionDate || !tx.postingDate) flags.push('date_missing')
     if (!rowCardLast4 || rowCardLast4 === '????') flags.push('card_missing')

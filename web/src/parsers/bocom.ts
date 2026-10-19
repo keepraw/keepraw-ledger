@@ -1,5 +1,5 @@
 import { parseDateInput, resolveShortDate } from '../core/dates'
-import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
+import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -430,7 +430,8 @@ function parseRow(
     .trim()
 
   const bankToken = extractBankToken(rawDescription)
-  const type = inferTransactionType(bankToken, rawDescription.slice(bankToken.length).trim(), direction)
+  const classification = classifyTransactionType(bankToken, direction, signForDirection(settlementParsed.minor, direction))
+  const type = classification.type
   const description = rawDescription || '未识别交易'
 
   return {
@@ -445,6 +446,7 @@ function parseRow(
     settlementCurrency: settlementParsed.currency,
     settlementAmountMinor: signForDirection(settlementParsed.minor, direction),
     type,
+    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
     confidence: 0.93,
@@ -454,12 +456,8 @@ function parseRow(
   }
 }
 
-const BANK_TOKEN_RE =
-  /^(分期利息|分期手续费|分期扣款|每期入账|商户分期|信用卡还款|转账还款|还款|退货|退款|退汇|刷卡金|返现|费用返还|取现|预借现金|消费|购物|支付|利息|手续费|年费|服务费|违约金|调整|冲正|其他)/
-
 export function extractBankToken(description: string): string {
-  const match = BANK_TOKEN_RE.exec(description.trim())
-  return match ? match[1]! : ''
+  return extractSourceTypeToken(description)
 }
 
 interface CurrencyAmount {

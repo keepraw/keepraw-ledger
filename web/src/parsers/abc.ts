@@ -1,5 +1,5 @@
 import { parseDateInput, type IsoDate } from '../core/dates'
-import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
+import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -325,12 +325,8 @@ export function cleanDescription(text: string): string {
   return value
 }
 
-const BANK_TOKEN_RE =
-  /^(网上消费退货|网上消费|跨行二维码支付|卡卡转账|分期利息|分期手续费|分期扣款|每期入账|还款|退货|退款|刷卡金|返现|取现|预借现金|消费|利息|手续费|年费|违约金|调整|冲正)/
-
 export function extractBankToken(description: string): string {
-  const match = BANK_TOKEN_RE.exec(description.trim())
-  return match ? match[1]! : ''
+  return extractSourceTypeToken(description)
 }
 
 export function directionFromSection(section: string): Direction | null {
@@ -404,8 +400,8 @@ function parseRow(
   const settlementAmountMinor = signForDirection(settleSplit.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const remainder = bankToken ? rawDescription.slice(bankToken.length).trim() : rawDescription
-  let type = inferTransactionType(bankToken, remainder, direction)
+  const classification = classifyTransactionType(bankToken || section || '', direction, settlementAmountMinor)
+  let type = classification.type
   if (section && /还款/.test(section) && direction === 'credit' && type === 'payment') {
     // keep payment
   }
@@ -428,6 +424,7 @@ function parseRow(
     settlementCurrency: settleSplit.currency,
     settlementAmountMinor,
     type,
+    typeUncertain: classification.requiresReview,
     direction,
     bankToken: bankToken || section || '',
     confidence: cleaned && cleaned !== '未识别交易' ? 0.9 : 0.6,

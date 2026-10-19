@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, inferTransactionType } from '../core/classify'
+import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import type { LegacyAnomaly, NormalizedLegacyRow } from './types'
 import {
@@ -120,12 +120,14 @@ export function parseKeeprawRows(dataRows: unknown[][], shape: KeeprawSheetShape
     const bank = normalizeLegacyBank(at(row, '银行'))
     const cardLast4 = normalizeLegacyCard(at(row, '卡尾号'))
     const direction = settlementAmountMinor < 0 ? 'credit' : 'debit'
-    const type = inferTransactionType('', rawDescription, direction)
+    const classification = classifyTransactionType(extractSourceTypeToken(rawDescription), direction, settlementAmountMinor)
+    const type = classification.type
     // This format carries no parser-confidence signal. Valid rows default to
     // 0.9 so they import as `ok`; only structural problems flag review.
     const confidence = 0.9
 
     const flags: ReviewFlag[] = []
+    if (classification.requiresReview || (transactionAmountMinor < 0) !== (settlementAmountMinor < 0)) flags.push('transaction_type_unclear')
     if (!rawTransactionDate || !rawPostingDate) flags.push('date_missing')
     if (cardLast4 === '????') flags.push('card_missing')
     if (transactionAmountMinor === 0 || settlementAmountMinor === 0) flags.push('amount_missing')
