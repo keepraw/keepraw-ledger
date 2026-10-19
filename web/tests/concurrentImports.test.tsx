@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, useApp } from '../src/app/AppStore'
 import { db, DEFAULT_SETTINGS } from '../src/db/db'
 import * as repository from '../src/db/repository'
-import { failedImportRecord } from '../src/core/ingest'
+import { failedImportRecord, ingestParsedStatement } from '../src/core/ingest'
 import { SYNTHETIC_CCB_HTML } from './fixtures/ccbEml'
 import { historyRow, workbookBytes } from './fixtures/legacyWorkbook'
 import { LEGACY_UNIFIED_COLUMNS } from '../src/importers/legacyPythonExportV1'
+import { ingestSynthetic, syntheticStatement } from './fixtures/identity'
+import * as registry from '../src/parsers/registry'
 
 let app: ReturnType<typeof useApp>
 function Probe() { app = useApp(); return null }
@@ -70,13 +72,66 @@ describe('AUD-005 cross-context import and clear', () => {
       archiving = true; await barrier.promise; return save(...args)
     })
     await act(async () => {
-      const done = app.importFiles([{ name: 'synthetic.html', type: 'text/html', size: bytes.byteLength, arrayBuffer: async () => bytes } as File])
+      const done = app.importFiles([{ name: 'synthetic.html', type: 'text/html', size: bytes.byteLength, arrayBuffer: async () => bytes } as File]).then(() => null, error => error)
       await waitFor(() => expect(archiving).toBe(true))
       await repository.clearAllData({ includeDemo: true })
-      barrier.release(); await done
+      barrier.release(); expect(await done).toBeInstanceOf(Error)
     })
     expect(await db.transactions.count()).toBe(0)
     expect(await db.imports.count()).toBe(0)
     expect(await db.attachments.count()).toBe(0)
+  })
+  it('replans after another tab edits classification/review without reparsing or overwriting decisions', async () => {
+    const seed = ingestSynthetic(['消费 保留人工决定'], 'existing')
+    await repository.persistImportResults([seed])
+    const row = seed.transactions[0]!
+    const persist = repository.persistImportResults
+    const writes = vi.spyOn(repository, 'persistImportResults').mockImplementationOnce(async (...args) => {
+      await repository.patchTransaction({ id: row.id, category: '旅行', reviewStatus: 'confirmed' })
+      await repository.setReviewNote(row.id, 'Synthetic retained decision')
+      return persist(...args)
+    })
+    const parses = vi.spyOn(registry, 'parseDocument')
+    await act(async () => { await app.importFiles([{ name: 'synthetic.html', type: 'text/html', size: bytes.byteLength, arrayBuffer: async () => bytes } as File]) })
+    expect(writes).toHaveBeenCalledTimes(2)
+    expect(parses).toHaveBeenCalledTimes(1)
+    expect(await db.transactions.get(row.id)).toMatchObject({ category: '旅行', reviewStatus: 'confirmed' })
+    expect((await db.reviewNotes.get(row.id))!.note).toBe('Synthetic retained decision')
+    expect(await db.transactions.count()).toBe(15)
+  })
+  it('bounds conflict retries to three attempts and leaves no partial imported batch', async () => {
+    const seed = ingestSynthetic(['消费 并发编辑'], 'existing')
+    await repository.persistImportResults([seed])
+    const persist = repository.persistImportResults
+    const writes = vi.spyOn(repository, 'persistImportResults').mockImplementation(async (...args) => {
+      await repository.patchTransaction({ id: seed.transactions[0]!.id, reviewStatus: 'confirmed' })
+      return persist(...args)
+    })
+    const parses = vi.spyOn(registry, 'parseDocument')
+    await act(async () => {
+      await expect(app.importFiles([{ name: 'synthetic.html', type: 'text/html', size: bytes.byteLength, arrayBuffer: async () => bytes } as File])).rejects.toThrow('本次操作已回滚')
+    })
+    expect(writes).toHaveBeenCalledTimes(3)
+    expect(parses).toHaveBeenCalledTimes(1)
+    expect(await db.transactions.count()).toBe(1)
+    expect(await db.imports.count()).toBe(1)
+    expect(await db.attachments.count()).toBe(0)
+    writes.mockRestore()
+    await act(async () => { await app.importFiles([{ name: 'synthetic.html', type: 'text/html', size: bytes.byteLength, arrayBuffer: async () => bytes } as File]) })
+    expect(await db.transactions.count()).toBe(15)
+    expect(await db.imports.count()).toBe(2)
+    expect(await db.attachments.count()).toBe(1)
+  })
+  it('rejects contradictory bank summaries instead of trusting whichever file writes last', async () => {
+    const parsed = syntheticStatement(['消费 合成商户A'])
+    parsed.summary = { ...parsed.summary, previousBalanceMinor: 0, currentBalanceMinor: 12880, newDebitMinor: 12880, newCreditMinor: 0 }
+    const first = ingestParsedStatement(parsed, { fileName: 'first.txt', fileHash: 'first', fileSize: 1, sourceType: 'text' }, await repository.readSnapshot())
+    await repository.persistImportResults([first])
+    const before = await repository.readSnapshot()
+    const next = syntheticStatement(['消费 合成商户B'])
+    next.summary = { ...parsed.summary, currentBalanceMinor: 25760, newDebitMinor: 25760 }
+    const second = ingestParsedStatement(next, { fileName: 'second.txt', fileHash: 'second', fileSize: 1, sourceType: 'text' }, before)
+    await expect(repository.persistImportResults([second])).rejects.toThrow(/银行汇总.*冲突/)
+    expect(await repository.readSnapshot()).toEqual(before)
   })
 })
