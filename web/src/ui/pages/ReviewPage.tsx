@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { formatMinor } from '../../core/money'
 import { buildDuplicateReviewDetails } from '../../core/migrationAudit'
-import { reconcileStatement } from '../../core/reconcile'
-import { REVIEW_FLAG_LABELS, bankName, type Statement, type Transaction } from '../../core/types'
+import { REVIEW_FLAG_LABELS, bankName, type Transaction } from '../../core/types'
 import { MAX_NOTE_CHARS } from '../../backup/validation'
 import {
   Badge,
@@ -17,10 +16,13 @@ import {
 } from '../components/ui'
 
 export function ReviewPage() {
-  const { visibleStatements, visibleTransactions, updateTransaction, saveNote, state, refresh } = useApp()
+  const { visibleStatements, visibleTransactions, updateTransaction, saveNote, state, recomputeStatement } = useApp()
   const [tab, setTab] = useState<'statements' | 'transactions'>('statements')
+  const [showAllStatements, setShowAllStatements] = useState(false)
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState('')
+  const [recomputing, setRecomputing] = useState(false)
+  const [recomputeError, setRecomputeError] = useState<string | null>(null)
   const duplicateDetails = useMemo(() => buildDuplicateReviewDetails(visibleTransactions,
     visibleTransactions.filter((tx) => tx.flags.includes('suspected_duplicate'))), [visibleTransactions])
   const transactionsById = useMemo(() => new Map(visibleTransactions.map((tx) => [tx.id, tx])), [visibleTransactions])
@@ -38,7 +40,8 @@ export function ReviewPage() {
     [visibleTransactions],
   )
 
-  const active = flaggedStatements.find((s) => s.id === selectedStatement) ?? flaggedStatements[0] ?? null
+  const reviewStatements = showAllStatements ? visibleStatements : flaggedStatements
+  const active = reviewStatements.find((s) => s.id === selectedStatement) ?? reviewStatements[0] ?? null
   const statementTransactions = useMemo(
     () => (active ? visibleTransactions.filter((tx) => tx.statementId === active.id) : []),
     [active, visibleTransactions],
@@ -52,13 +55,16 @@ export function ReviewPage() {
     })
   }
 
-  const recomputeStatement = async (statement: Statement): Promise<void> => {
-    const rows = visibleTransactions.filter((tx) => tx.statementId === statement.id)
-    const result = reconcileStatement({ summary: statement.summary, transactions: rows })
-    // Reconciliation is derived from the transactions, so it is recomputed and stored
-    // whenever a human confirms or rejects a row.
-    await refresh()
-    void result
+  const recompute = async (statementId: string): Promise<void> => {
+    setRecomputing(true)
+    setRecomputeError(null)
+    try {
+      await recomputeStatement(statementId)
+    } catch (error) {
+      setRecomputeError(error instanceof Error ? error.message : '保存对账结果失败，请重试。')
+    } finally {
+      setRecomputing(false)
+    }
   }
 
   return (
@@ -78,8 +84,17 @@ export function ReviewPage() {
         </div>
       </div>
 
+      {recomputeError ? <div className="notice notice-warn" role="alert">{recomputeError}</div> : null}
+
       {tab === 'statements' ? (
-        flaggedStatements.length === 0 ? (
+        <label className="row">
+          <input type="checkbox" checked={showAllStatements} onChange={event => setShowAllStatements(event.target.checked)} />
+          显示全部账单（可重新核对历史状态）
+        </label>
+      ) : null}
+
+      {tab === 'statements' ? (
+        reviewStatements.length === 0 ? (
           <div className="card">
             <EmptyState title="所有账单都已通过对账" hint="导入新账单后，若账单汇总与交易明细不一致，会在这里列出差额。" />
           </div>
@@ -98,7 +113,7 @@ export function ReviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {flaggedStatements.map((statement) => (
+                    {reviewStatements.map((statement) => (
                       <tr
                         key={statement.id}
                         onClick={() => setSelectedStatement(statement.id)}
@@ -134,11 +149,11 @@ export function ReviewPage() {
                       {bankName(active.bank)} 尾号{active.cardLast4} 对账明细
                     </h2>
                     <p>
-                      本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记
+                      交易修改后自动保存对账结果；也可重新核对并保存历史账单状态。
                     </p>
                   </div>
-                  <button className="btn btn-sm" type="button" onClick={() => void recomputeStatement(active)}>
-                    重新计算对账结果
+                  <button className="btn btn-sm" type="button" disabled={recomputing || state.demoMode} onClick={() => void recompute(active.id)}>
+                    {recomputing ? '正在保存对账结果…' : '重新核对并保存'}
                   </button>
                 </div>
                 <div className="card-pad stack">

@@ -14,7 +14,8 @@ import {
   readSnapshot,
   saveOriginalFile,
   setReviewNote,
-  patchTransaction as persistTransactionPatch,
+  patchTransactionWithStatements as persistTransactionPatch,
+  recomputeStatement as persistStatementRecomputation,
   updateTransactions,
   validateBackup,
   type ArchiveStatus,
@@ -62,6 +63,7 @@ interface AppApi {
   confirmLegacyImport: (preview: LegacyPreview) => Promise<ImportRecord>
   loadDemoData: () => Promise<void>
   updateTransaction: (patch: Partial<Transaction> & { id: string }) => Promise<void>
+  recomputeStatement: (statementId: string) => Promise<void>
   saveNote: (transactionId: string, note: string) => Promise<void>
   backup: () => Promise<void>
   backupData: () => Promise<void>
@@ -78,6 +80,15 @@ interface AppApi {
 const AppContext = createContext<AppApi | null>(null)
 
 const EMPTY: Snapshot = { statements: [], transactions: [], imports: [] }
+
+function mergeStatementStates(current: Statement[], updated: Statement[]): Statement[] {
+  const byId = new Map(updated.map(row => [row.id, row]))
+  const next = current.map(row => {
+    const replacement = byId.get(row.id)
+    return replacement && JSON.stringify(replacement) !== JSON.stringify(row) ? replacement : row
+  })
+  return next.some((row, index) => row !== current[index]) ? next : current
+}
 
 interface ImportBatchResult extends IngestResult {
   evidence?: { buffer: ArrayBuffer; fileHash: string; fileName: string; mimeType: string }
@@ -311,10 +322,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const committed = await persistTransactionPatch(ownedPatch)
       if (!committed) return
       setSnapshot(current => ({ ...current,
-        transactions: current.transactions.map(tx => tx.id === committed.id ? committed : tx),
+        transactions: current.transactions.map(tx => tx.id === committed.transaction.id ? committed.transaction : tx),
+        statements: mergeStatementStates(current.statements, committed.statements),
       }))
     })
   }, [enqueue])
+
+  const recomputeStatement = useCallback((statementId: string) => enqueue(async () => {
+    if ((await loadSettings()).demoMode) throw new Error('请先关闭演示模式，再重新核对真实账单。')
+    const statement = await persistStatementRecomputation(statementId)
+    if (statement) setSnapshot(current => ({ ...current, statements: mergeStatementStates(current.statements, [statement]) }))
+  }), [enqueue])
 
   const saveNote = useCallback((transactionId: string, note: string) => enqueue(async () => {
     await setReviewNote(transactionId, note)
@@ -425,6 +443,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       confirmLegacyImport,
       loadDemoData,
       updateTransaction: patchTransaction,
+      recomputeStatement,
       saveNote,
       backup,
       backupData,
@@ -450,6 +469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       confirmLegacyImport,
       loadDemoData,
       patchTransaction,
+      recomputeStatement,
       saveNote,
       backup,
       backupData,
