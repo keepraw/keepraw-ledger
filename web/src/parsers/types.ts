@@ -99,6 +99,12 @@ export class ParseError extends Error {
   }
 }
 
+/** A structurally recognized transaction must never vanish from a successful parse. */
+export function requireTransactionRow<T>(row: T | null, rowIndex: number): T {
+  if (row === null) throw new ParseError(`第 ${rowIndex + 1} 行交易行结构或交易日期无效，整份账单未导入`, 'invalid_transaction_row')
+  return row
+}
+
 /** A recognized transaction must not disappear or borrow the other monetary leg. */
 export function requireTransactionAmount<T>(amount: T | null, rowIndex: number): T {
   if (amount === null) {

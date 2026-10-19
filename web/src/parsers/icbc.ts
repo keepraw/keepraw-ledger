@@ -2,7 +2,7 @@ import { parseDateInput } from '../core/dates'
 import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'icbc_eml'
 const PARSER_VERSION = '1.0.0'
@@ -309,14 +309,17 @@ function collectTransactions(
   const transactions: ParsedTransaction[] = []
   for (let i = located.headerRowIndex + 1; i < table.rows.length; i++) {
     const cells = table.rows[i]!
+    // ICBC puts the card first, dates second/third and a separate type fourth.
+    if (cells.slice(1, 3).some(cell => /^\d{4}[-/.]?\d/.test(cell)) ||
+      (cells.length >= 6 && /^\d{4}$/.test(cells[0] ?? '') && /\/[A-Z]{3}/i.test(cells[5] ?? ''))) {
+      const parsed = requireTransactionRow(cells.length === 7 ? parseRow(cells, i, fallbackCardLast4) : null, i)
+      transactions.push({ ...parsed, sourceRow: transactions.length })
+      continue
+    }
     if (cells.length === 1) {
       if (FOOTER_MARKERS.test(cells[0] ?? '')) break
       continue
     }
-    if (cells.length !== 7) continue
-    if (FOOTER_MARKERS.test(cells.join(' '))) continue
-    const parsed = parseRow(cells, i, fallbackCardLast4)
-    if (parsed) transactions.push({ ...parsed, sourceRow: transactions.length })
   }
   return transactions
 }

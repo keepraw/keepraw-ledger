@@ -2,7 +2,7 @@ import { parseDateInput, resolveShortDate } from '../core/dates'
 import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'bocom_eml'
 const PARSER_VERSION = '2.0.0'
@@ -214,14 +214,22 @@ export function locateSections(doc: SourceDocument): BocomSections | null {
   let section: 'credit' | 'debit' | null = null
   let headerRowIndex = -1
   let headerCount = 0
+  let headerTableIndex = -1
 
   rows.forEach((ref, index) => {
     const text = ref.cells.join(' ')
-    if (CREDIT_SECTION.test(text)) {
+    // Dates in transaction rows outrank words in their merchant descriptions.
+    if (section !== null && (countDateCells(ref.cells) > 0 ||
+      (ref.cells.some(cell => /^\d{4}$/.test(cell)) && ref.cells.filter(cell => /^[A-Z]{3}\s*[-\d]/i.test(cell)).length === 2))) {
+      if (section === 'credit') creditRows.push(ref)
+      else debitRows.push(ref)
+      return
+    }
+    if (ref.cells.length <= 3 && CREDIT_SECTION.test(text)) {
       section = 'credit'
       return
     }
-    if (DEBIT_SECTION.test(text)) {
+    if (ref.cells.length <= 3 && DEBIT_SECTION.test(text)) {
       section = 'debit'
       return
     }
@@ -230,11 +238,12 @@ export function locateSections(doc: SourceDocument): BocomSections | null {
       headerCount += 1
       // The first header row belongs to the section named right above it; a repeated
       // header row means the statement moved on to the 消费 section.
-      if (headerCount > 1) section = 'debit'
+      if (headerCount > 1 && ref.tableIndex !== headerTableIndex) section = 'debit'
       else if (section === null) section = 'debit'
+      headerTableIndex = ref.tableIndex
       return
     }
-    if (FOOTER_MARKERS.test(text)) {
+    if (ref.cells.length <= 3 && FOOTER_MARKERS.test(text)) {
       section = null
       return
     }
@@ -376,10 +385,8 @@ function collectTransactions(
   const transactions: ParsedTransaction[] = []
   const add = (refs: RowRef[], direction: 'credit' | 'debit'): void => {
     for (const ref of refs) {
-      const parsed = parseRow(ref, direction, cycle, fallbackYear)
-      if (parsed) {
-        transactions.push({ ...parsed, sourceRow: transactions.length })
-      }
+      const parsed = requireTransactionRow(parseRow(ref, direction, cycle, fallbackYear), ref.rowIndex)
+      transactions.push({ ...parsed, sourceRow: transactions.length })
     }
   }
   add(sections.creditRows, 'credit')
@@ -403,6 +410,7 @@ function parseRow(
   if (!transactionDate) return null
 
   const cardIndex = cells.findIndex((cell, index) => index > dateIndexes[1]! && /^\d{4}$/.test(cell))
+  if (cardIndex === -1) return null
   const cardLast4 = cardIndex === -1 ? '' : cells[cardIndex]!
 
   const amountIndexes = cells
