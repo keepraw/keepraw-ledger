@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { DEFAULT_SETTINGS, db, loadSettings, saveSettings } from '../db/db'
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../db/db'
 import {
   clearAllData,
   buildDataBackupBlob,
@@ -12,6 +12,8 @@ import {
   purgeDemoRows,
   ensureDemoRowsPurged,
   readSnapshot,
+  readImportSnapshot,
+  markImportEvidenceMissing,
   saveOriginalFile,
   setReviewNote,
   patchTransactionWithStatements as persistTransactionPatch,
@@ -30,7 +32,9 @@ import {
   type LegacyExisting,
 } from '../importers/legacyImport'
 import type { LegacyPreview } from '../importers/types'
-import { ingestParsedStatement, failedImportRecord, unsupportedRecord, type IngestResult } from '../core/ingest'
+import { ingestParsedStatement, failedImportRecord, unsupportedRecord, type IngestMeta, type IngestResult } from '../core/ingest'
+import type { ParsedStatement } from '../parsers/types'
+import { LedgerConflictError, readLedgerRevision, subscribeLedgerChanges } from '../db/ledgerRevision'
 import { buildSourceDocument, sha256Hex } from '../parsers/extract'
 import { detectParser, parseDocument, UnsupportedFileError } from '../parsers/registry'
 import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/types'
@@ -92,6 +96,17 @@ function mergeStatementStates(current: Statement[], updated: Statement[]): State
 
 interface ImportBatchResult extends IngestResult {
   evidence?: { buffer: ArrayBuffer; fileHash: string; fileName: string; mimeType: string }
+  parsed?: ParsedStatement
+  meta?: IngestMeta
+}
+
+function advanceImportSnapshot(current: Snapshot, result: IngestResult): Snapshot {
+  if (!result.statement) return { ...current, imports: current.imports.filter(row => row.id !== result.record.id).concat(result.record) }
+  return {
+    statements: current.statements.filter(row => row.id !== result.statement!.id).concat(result.statement),
+    transactions: current.transactions.filter(row => row.statementId !== result.statement!.id).concat(result.transactions),
+    imports: current.imports.filter(row => row.id !== result.record.id).concat(result.record),
+  }
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -124,6 +139,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refresh = useCallback(() => enqueue(() => reload()), [enqueue, reload])
+
+  useEffect(() => {
+    const unsubscribe = subscribeLedgerChanges(() => { void refresh() })
+    const onFocus = () => { void refresh() }
+    window.addEventListener('focus', onFocus)
+    return () => { unsubscribe(); window.removeEventListener('focus', onFocus) }
+  }, [refresh])
 
   useEffect(() => {
     if (initialised.current) return
@@ -161,8 +183,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if ((await loadSettings()).demoMode) {
         throw new Error('演示模式下无法导入真实账单，请先在设置中关闭演示模式。')
       }
-      const results: ImportBatchResult[] = []
-      let current = await readSnapshot()
+      let results: ImportBatchResult[] = []
+      const initial = await readImportSnapshot()
+      let planningRevision = initial.revision
+      let current = initial.snapshot
 
       for (const [index, file] of files.entries()) {
         setProgress({ fileName: file.name, index, total: files.length, phase: '读取文件' })
@@ -200,12 +224,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             { ...meta, fileHash, sourceType: doc.sourceType },
             { statements: current.statements, transactions: current.transactions, imports: current.imports },
           )
-          results.push({ ...result, evidence })
-          current = {
-            statements: current.statements.filter((s) => s.id !== result.statement?.id).concat(result.statement ?? []),
-            transactions: current.transactions.filter((t) => t.statementId !== result.statement?.id).concat(result.transactions),
-            imports: current.imports.filter((i) => i.id !== result.record.id).concat(result.record),
-          }
+          results.push({ ...result, evidence, parsed, meta: { fileName: file.name, fileHash, fileSize: file.size, sourceType: doc.sourceType } })
+          current = advanceImportSnapshot(current, result)
         } catch (error) {
           const message = describeError(error)
           const fileHash = evidence?.fileHash ?? `unavailable-${crypto.randomUUID()}`
@@ -221,7 +241,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       setProgress(null)
-      await persistImportResults(results)
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try { await persistImportResults(results, planningRevision); break }
+          catch (error) {
+            if (!(error instanceof LedgerConflictError) || error.cleared || attempt >= 2) throw error
+            const fresh = await readImportSnapshot()
+            if (fresh.revision.generation !== initial.revision.generation) throw new LedgerConflictError(true)
+            planningRevision = fresh.revision
+            current = fresh.snapshot
+            results = results.map(result => {
+              const next = result.parsed && result.meta ? { ...result, ...ingestParsedStatement(result.parsed, result.meta, current) } : result
+              current = advanceImportSnapshot(current, next)
+              return next
+            })
+          }
+        }
+      } catch (error) {
+        await reload()
+        throw error
+      }
       // Archive raw evidence keyed by hash. Best-effort: never fails the import.
       for (const result of results) {
         const raw = result.evidence
@@ -234,6 +273,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             data: raw.buffer.slice(0),
             importId: result.record.id,
             parserId: result.record.parserId,
+            generation: initial.revision.generation,
           })
           retained = true
         } catch {
@@ -243,10 +283,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           result.record = { ...result.record, message: `${result.record.message}，原始文件未保留，可稍后重新导入。` }
           // The manifest also derives missing evidence from the attachment table,
           // even if quota prevents this optional warning from being persisted.
-          try { await db.imports.put(result.record) } catch { /* Evidence remains missing. */ }
+          try { await markImportEvidenceMissing(result.record, initial.revision.generation) } catch { /* Evidence remains missing. */ }
         }
       }
       await reload()
+      if ((await readLedgerRevision()).generation !== initial.revision.generation) throw new LedgerConflictError(true)
       return results.map((result) => result.record)
     }),
     [enqueue, reload],
@@ -299,15 +340,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       setProgress({ fileName: preview.meta.fileName, index: 0, total: 1, phase: '写入历史数据' })
       try {
-        const snapshot = await readSnapshot()
-        const plan = planLegacyImport(preview, {
-          imports: snapshot.imports,
-          statements: snapshot.statements,
-          transactions: snapshot.transactions,
-        })
-        await persistLegacyImport(plan)
-        await reload()
-        return plan.record
+        const initial = await readImportSnapshot()
+        let captured = initial
+        for (let attempt = 0; ; attempt++) {
+          const plan = planLegacyImport(preview, captured.snapshot)
+          try {
+            await persistLegacyImport(plan, captured.revision)
+            await reload()
+            return plan.record
+          } catch (error) {
+            if (!(error instanceof LedgerConflictError) || error.cleared || attempt >= 2) { await reload(); throw error }
+            captured = await readImportSnapshot()
+            if (captured.revision.generation !== initial.revision.generation) throw new LedgerConflictError(true)
+          }
+        }
       } finally {
         setProgress(null)
       }
