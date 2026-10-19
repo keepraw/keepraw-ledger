@@ -1,5 +1,5 @@
 import { parseDateInput } from '../core/dates'
-import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
+import { extractMerchant, classifyTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -347,8 +347,8 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
   const settleMinor = signForDirection(primary.minor, direction)
 
   const cleaned = cleanDescription(rawDescription)
-  const remainder = cleaned.startsWith(bankToken) ? cleaned.slice(bankToken.length).trim() : cleaned
-  const type = inferTransactionType(bankToken, remainder, direction)
+  const classification = classifyTransactionType(bankToken, direction, settleMinor)
+  const type = classification.type
   const description = cleaned || '未识别交易'
 
   return {
@@ -363,6 +363,7 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     settlementCurrency: settleCurrency,
     settlementAmountMinor: settleMinor,
     type,
+    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,

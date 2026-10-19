@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, inferTransactionType } from '../core/classify'
+import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import {
   normalizeHeader, normalizeLegacyBank, normalizeLegacyCard, normalizeLegacyCurrency,
@@ -75,7 +75,9 @@ export function parseUnifiedBillRows(data: unknown[][], columns: Map<string, num
     const direction = settlementAmountMinor < 0 ? 'credit' : 'debit'
     if ((transactionAmountMinor < 0) !== (settlementAmountMinor < 0)) flags.push('amount_direction_unclear')
     if (transactionAmountMinor === 0 || settlementAmountMinor === 0) flags.push('amount_missing')
-    const type = inferTransactionType('', description, direction)
+    const classification = classifyTransactionType(extractSourceTypeToken(description), direction, settlementAmountMinor)
+    const type = classification.type
+    if (classification.requiresReview || flags.includes('amount_direction_unclear')) flags.push('transaction_type_unclear')
     rows.push({
       bank, cardLast4, transactionDate, postingDate, description, rawDescription: description,
       merchant: extractMerchant(description), transactionCurrency, transactionAmountMinor,

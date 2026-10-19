@@ -132,14 +132,15 @@ export function filterByStatementTrust(
   statements: Statement[],
   includeUnreconciled: boolean,
 ): StatementFilterResult {
-  if (includeUnreconciled || statements.length === 0) {
+  if (includeUnreconciled) {
     return { transactions, excludedStatementIds: new Set() }
   }
   const untrusted = new Set(
     statements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').map((s) => s.id),
   )
   return {
-    transactions: transactions.filter((tx) => !untrusted.has(tx.statementId)),
+    transactions: transactions.filter((tx) => !untrusted.has(tx.statementId) &&
+      (!tx.flags.includes('transaction_type_unclear') || tx.reviewStatus === 'confirmed')),
     excludedStatementIds: untrusted,
   }
 }
