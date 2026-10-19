@@ -225,6 +225,10 @@ function describeOutcome(
   } else if (status === 'reconciled') {
     parts.push('账单对账通过')
   }
+  const currency = parsed.summary.components[0]?.currency ?? 'CNY'
+  if (parsed.transactions.some(row => row.settlementCurrency !== currency)) {
+    parts.push(`仅核对 ${currency} 汇总，其他币种交易已保留、未核对；不代表原始账单完整性已获银行证明`)
+  }
   return parts.join('，')
 }
 
