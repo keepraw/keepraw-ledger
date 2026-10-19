@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../src/db/db'
-import { exportDataBackup, importBackup, patchTransaction, persistImportResults, persistLegacyImport, readSnapshot, setReviewNote, updateTransactions } from '../src/db/repository'
+import { exportDataBackup, importBackup, patchTransaction, persistImportResults, persistLegacyImport, readSnapshot, recomputeStatement, setReviewNote, updateTransactions } from '../src/db/repository'
 import { buildFullBackupZip, restoreFullBackupZip } from '../src/backup/archive'
 import { ingestParsedStatement } from '../src/core/ingest'
 import { filterByStatementTrust, summarize } from '../src/core/analytics'
@@ -109,6 +109,35 @@ describe('AUD-004 persisted statement state', () => {
     await db.statements.update(result.statement!.id, { status: 'failed' })
     await patchTransaction({ id: result.transactions[0]!.id, reviewStatus: 'confirmed' })
     expect((await db.statements.get(result.statement!.id))!.status).toBe('failed')
+  })
+
+  it('does not scan or recalculate a statement for a category-only edit', async () => {
+    const result = await seed()
+    const before = await db.statements.toArray()
+    const scan = vi.spyOn(db.transactions, 'where')
+    await patchTransaction({ id: result.transactions[0]!.id, category: '旅行' })
+    expect(scan).not.toHaveBeenCalled()
+    expect(await db.statements.toArray()).toEqual(before)
+  })
+
+  it('explicit recalculation changes only the selected statement derived fields', async () => {
+    const result = await seed(2)
+    await db.statements.update(result.statement!.id, { status: 'reconciled' })
+    const before = await readSnapshot()
+    const changed = await recomputeStatement(result.statement!.id)
+    expect(changed).toMatchObject({ status: 'needs_review', transactionCount: 2, reconciliation: { status: 'mismatch' } })
+    expect({ ...changed, status: before.statements[0]!.status }).toEqual(before.statements[0])
+    expect((await readSnapshot()).transactions).toEqual(before.transactions)
+    expect(await recomputeStatement('missing-statement')).toBeUndefined()
+  })
+
+  it('rolls back XLSX rows and import metadata when statement rebuilding fails', async () => {
+    await seed()
+    const plan = await legacyPlan()
+    const before = await readSnapshot()
+    vi.spyOn(db.statements, 'put').mockRejectedValueOnce(new Error('synthetic statement quota'))
+    await expect(persistLegacyImport(plan)).rejects.toThrow('statement quota')
+    expect(await readSnapshot()).toEqual(before)
   })
 
   it.each(['json-v1', 'json-v2', 'zip'] as const)('keeps corrected status after reopening and %s restore', async (format) => {

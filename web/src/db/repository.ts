@@ -6,8 +6,29 @@ import { type AttachmentRow, db } from './db'
 const DEMO_PURGE_KEY = 'migration:memory-only-demo'
 import { validateBackup } from '../backup/validation'
 import { createJsonBlob } from '../backup/json'
-import { reconcileStatement } from '../core/reconcile'
+import { deriveStatementState } from '../core/statementState'
 export { validateBackup } from '../backup/validation'
+
+/** Caller holds the statements + transactions write transaction. Indexed by statementId. */
+async function rebuildStatementStates(statementIds: Iterable<string>): Promise<Statement[]> {
+  const updated: Statement[] = []
+  for (const id of new Set(statementIds)) {
+    const current = await db.statements.get(id)
+    if (!current) continue
+    const rows = await db.transactions.where('statementId').equals(id).toArray()
+    const next = deriveStatementState(current, rows)
+    await db.statements.put(next)
+    updated.push(next)
+  }
+  return updated
+}
+
+/** Explicit repair for a selected historical statement, never a database-wide migration. */
+export async function recomputeStatement(statementId: string): Promise<Statement | undefined> {
+  return db.transaction('rw', db.statements, db.transactions, async () => {
+    return (await rebuildStatementStates([statementId]))[0]
+  })
+}
 
 function demoImportHashesWithoutRealReferences(
   imports: readonly Pick<ImportRecord, 'fileHash' | 'isDemo'>[],
@@ -51,6 +72,7 @@ export async function persistImportResults(results: IngestResult[]): Promise<voi
       const insertedIds = new Set(result.inserted.map((tx) => tx.id))
       await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)))
     }
+    await rebuildStatementStates(results.flatMap(result => result.statement ? [result.statement.id] : []))
   })
 }
 
@@ -65,23 +87,39 @@ export async function persistLegacyImport(plan: {
       await db.settings.delete(DEMO_PURGE_KEY)
     }
     await db.imports.put(plan.record)
-    await db.statements.bulkPut(plan.statements)
+    // Historical XLSX carries no new bank summary. Preserve stored evidence.
+    for (const statement of plan.statements) {
+      if (!await db.statements.get(statement.id)) await db.statements.add(statement)
+    }
     for (let offset = 0; offset < plan.inserted.length; offset += 2000) {
       await db.transactions.bulkAdd(plan.inserted.slice(offset, offset + 2000))
     }
+    await rebuildStatementStates([...plan.statements.map(row => row.id), ...plan.inserted.map(row => row.statementId)])
   })
 }
 
 /** Merge against the latest committed row, never against a captured React snapshot. */
 export async function patchTransaction(patch: Partial<Transaction> & { id: string }): Promise<Transaction | undefined> {
+  return (await patchTransactionWithStatements(patch))?.transaction
+}
+
+/** Return the committed derived rows as well, so React can publish one coherent state. */
+export async function patchTransactionWithStatements(patch: Partial<Transaction> & { id: string }): Promise<{
+  transaction: Transaction
+  statements: Statement[]
+} | undefined> {
   const ownedPatch = structuredClone(patch)
-  return db.transaction('rw', db.transactions, db.settings, async () => {
+  return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
     const current = await db.transactions.get(ownedPatch.id)
     if (!current) return undefined
     const next = { ...current, ...ownedPatch }
     await db.transactions.put(next)
     if (next.isDemo) await db.settings.delete(DEMO_PURGE_KEY)
-    return next
+    const affectsReconciliation = (['statementId', 'transactionCurrency', 'transactionAmountMinor',
+      'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'reviewStatus', 'isDemo'] as const)
+      .some(key => current[key] !== next[key])
+    const statements = affectsReconciliation ? await rebuildStatementStates([current.statementId, next.statementId]) : []
+    return { transaction: next, statements }
   })
 }
 
@@ -90,9 +128,11 @@ export async function updateTransaction(transaction: Transaction): Promise<void>
 }
 
 export async function updateTransactions(transactions: Transaction[]): Promise<void> {
-  await db.transaction('rw', db.transactions, db.settings, async () => {
+  await db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
+    const prior = await db.transactions.bulkGet(transactions.map(row => row.id))
     await db.transactions.bulkPut(transactions)
     if (transactions.some(row => row.isDemo)) await db.settings.delete(DEMO_PURGE_KEY)
+    await rebuildStatementStates([...prior.flatMap(row => row ? [row.statementId] : []), ...transactions.map(row => row.statementId)])
   })
 }
 
@@ -244,9 +284,7 @@ async function applyBackupPayload(payload: BackupPayload, storedNotes: Array<{ t
       // A complete restored statement already carries its original decisions
       // and reconciliation. Only existing/partial statements need rebuilding.
       if (!existingStatementIds.has(current.id) && current.transactionCount === transactions.length) continue
-      const reconciliation = reconcileStatement({ summary: current.summary, transactions })
-      await db.statements.put({ ...current, transactionCount: transactions.length, reconciliation,
-        status: current.status === 'imported' ? 'imported' : reconciliation.status === 'passed' ? 'reconciled' : 'needs_review' })
+      await db.statements.put(deriveStatementState(current, transactions))
     }
     // V2 notes: insert absent notes preserving original content/timestamps.
     // Identical content is already a no-op; conflicting content already threw
