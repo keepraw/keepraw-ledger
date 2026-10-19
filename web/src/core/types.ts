@@ -70,6 +70,7 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number]
 
 export const REVIEW_FLAGS = [
+  'transaction_type_unclear',
   'statement_mismatch',
   'missing_summary',
   'amount_direction_unclear',
@@ -85,6 +86,7 @@ export const REVIEW_FLAGS = [
 export type ReviewFlag = (typeof REVIEW_FLAGS)[number]
 
 export const REVIEW_FLAG_LABELS: Record<ReviewFlag, string> = {
+  transaction_type_unclear: '交易类型待确认',
   statement_mismatch: '账单对账存在差额',
   missing_summary: '缺少必要汇总信息',
   amount_direction_unclear: '借贷方向不确定',

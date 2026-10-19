@@ -1,5 +1,5 @@
 import { addDays, addMonths, parseDateInput } from '../core/dates'
-import { inferTransactionType, signForDirection } from '../core/classify'
+import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { itemCenterX, pageRows, type TextRow } from './pdfLayout'
@@ -439,8 +439,9 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     .trim()
 
   const cleaned = cleanDescription(rawDescription)
-  const bankToken = /^(消费|取现|还款|退款|退货|返现|利息|手续费|调整)/.exec(cleaned)?.[1] ?? ''
-  const type = inferTransactionType(bankToken, cleaned, selectedAmount.direction)
+  const bankToken = extractSourceTypeToken(cleaned)
+  const classification = classifyTransactionType(bankToken, selectedAmount.direction, minor)
+  const type = classification.type
 
   return {
     cardLast4: rowCardLast4,
@@ -454,6 +455,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     settlementCurrency: 'CNY',
     settlementAmountMinor: minor,
     type,
+    typeUncertain: classification.requiresReview,
     direction: selectedAmount.direction,
     bankToken,
     confidence: cleaned && cleaned !== '未识别交易' ? 0.95 : 0.6,

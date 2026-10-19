@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, inferTransactionType } from '../core/classify'
+import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import { type IsoDate, parseDateInput } from '../core/dates'
 import { isSupportedCurrency, parseAmountToMinor } from '../core/money'
 import type { BankId, ReviewFlag } from '../core/types'
@@ -220,7 +220,8 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
     const bank = normalizeLegacyBank(at(row, 'bank'))
     const cardLast4 = normalizeLegacyCard(at(row, 'card_last4'))
     const direction = settlementAmountMinor < 0 ? 'credit' : 'debit'
-    const type = inferTransactionType('', rawDescription, direction)
+    const classification = classifyTransactionType(extractSourceTypeToken(rawDescription), direction, settlementAmountMinor)
+    const type = classification.type
     const confidenceRaw = at(row, 'confidence')
     const confidence =
       typeof confidenceRaw === 'number' && Number.isFinite(confidenceRaw)
@@ -228,6 +229,7 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
         : 0.5
 
     const flags: ReviewFlag[] = []
+    if (classification.requiresReview || (transactionAmountMinor < 0) !== (settlementAmountMinor < 0)) flags.push('transaction_type_unclear')
     if (confidence < 0.8) flags.push('low_confidence')
     if (!rawTransactionDate || !rawPostingDate) flags.push('date_missing')
     if (cardLast4 === '????') flags.push('card_missing')

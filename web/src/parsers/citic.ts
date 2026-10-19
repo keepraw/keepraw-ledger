@@ -1,5 +1,5 @@
 import { parseDateInput } from '../core/dates'
-import { extractMerchant, inferTransactionType, signForDirection } from '../core/classify'
+import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -302,12 +302,8 @@ export function cleanDescription(text: string): string {
   return value
 }
 
-const BANK_TOKEN_RE =
-  /^(分期利息|分期手续费|分期扣款|每期入账|商户分期|信用卡还款|转账还款|多渠道还款|还款|退货|退款|刷卡金|返现|费用返还|取现|预借现金|消费|利息|手续费|年费|违约金|调整|冲正)/
-
 export function extractBankToken(description: string): string {
-  const match = BANK_TOKEN_RE.exec(description.trim())
-  return match ? match[1]! : ''
+  return extractSourceTypeToken(description)
 }
 
 function collectTransactions(doc: SourceDocument, fallbackCardLast4: string): ParsedTransaction[] {
@@ -351,8 +347,8 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
   const settlementAmountMinor = signForDirection(primary.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const remainder = bankToken ? rawDescription.slice(bankToken.length).trim() : rawDescription
-  const type = inferTransactionType(bankToken, remainder, direction)
+  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
+  const type = classification.type
   const cleaned = cleanDescription(rawDescription)
   const description = cleaned || '未识别交易'
 
@@ -368,6 +364,7 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     settlementCurrency: primary.currency,
     settlementAmountMinor,
     type,
+    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,

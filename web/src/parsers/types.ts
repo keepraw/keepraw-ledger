@@ -56,6 +56,8 @@ export interface ParsedTransaction {
   settlementCurrency: string
   settlementAmountMinor: number
   type: TransactionType
+  /** Missing or contradictory authoritative type evidence; persist as review, never a guess. */
+  typeUncertain?: boolean
   direction: Direction
   /** The bank's own structured type token when the statement provides one. */
   bankToken: string

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { db } from '../src/db/db'
 import { persistLegacyImport, readSnapshot } from '../src/db/repository'
-import { inferTransactionType } from '../src/core/classify'
+import { classifyTransactionType, inferTransactionType } from '../src/core/classify'
 import { DEFAULT_FILTERS, applyFilters, filterByStatementTrust, summarize } from '../src/core/analytics'
 import { planLegacyImport, previewLegacyWorkbook } from '../src/importers/legacyImport'
 import { MIGRATION_FORMATS } from './fixtures/historicalMigration'
@@ -47,12 +47,21 @@ describe('AUD-011 merchant text cannot redefine financial type', () => {
       const snapshot = await store(format, '合成未知贷记商户', -100)
       expect(snapshot.transactions[0]!.flags).toContain('transaction_type_unclear')
       expect(snapshot.transactions[0]!.reviewStatus).toBe('pending')
-      expect(applyFilters(snapshot.transactions, DEFAULT_FILTERS)).toHaveLength(0)
+      expect(filterByStatementTrust(snapshot.transactions, snapshot.statements, false).transactions).toHaveLength(0)
+      // Ordinary date/search filters keep the full transaction list available.
+      expect(applyFilters(snapshot.transactions, DEFAULT_FILTERS)).toHaveLength(1)
       render(<DashboardPage />)
       expect(screen.getByTestId('type-summary-warning')).toHaveTextContent('交易类型待确认')
     })
   }
   it.each([['退款 合成商户', 'refund'], ['返现 合成活动', 'cashback'], ['还款 合成转账', 'payment']] as const)('keeps a format-defined prefix %s', async (description, type) => {
     expect((await store(MIGRATION_FORMATS[0], description, -100)).transactions[0]).toMatchObject({ type, direction: 'credit', reviewStatus: 'ok' })
+  })
+  it('validates signed amounts independently of the authoritative token', () => {
+    expect(classifyTransactionType('退款', 'credit', 100)).toMatchObject({ requiresReview: true })
+    expect(classifyTransactionType('退款', 'credit', -100)).toEqual({ type: 'refund', requiresReview: false })
+    expect(classifyTransactionType('消费', 'credit', -100)).toEqual({ type: 'payment', requiresReview: true })
+    expect(classifyTransactionType('分期原始', 'debit', 100)).toEqual({ type: 'installment_original', requiresReview: false })
+    expect(classifyTransactionType('分期扣款', 'debit', 100)).toEqual({ type: 'installment_payment', requiresReview: false })
   })
 })

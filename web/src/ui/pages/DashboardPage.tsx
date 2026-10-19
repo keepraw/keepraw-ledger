@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
-import { DEFAULT_FILTERS, applyFilters, groupBy, groupByBank, monthlyTrend, summarize, untrustedAmount, type Filters } from '../../core/analytics'
+import { DEFAULT_FILTERS, applyFilters, filterByStatementTrust, groupBy, groupByBank, monthlyTrend, summarize, untrustedAmount, type Filters } from '../../core/analytics'
 import { bankName, type BankId } from '../../core/types'
 import { formatMinor, normalizeCurrencyCode } from '../../core/money'
 import { monthEnd } from '../../core/dates'
@@ -18,10 +18,7 @@ export function DashboardPage() {
   const [showAllCards, setShowAllCards] = useState(false)
 
   const trusted = useMemo(() => {
-    const untrusted = new Set(
-      visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').map((s) => s.id),
-    )
-    const base = filters.includeUnreconciled ? visibleTransactions : visibleTransactions.filter((tx) => !untrusted.has(tx.statementId))
+    const base = filterByStatementTrust(visibleTransactions, visibleStatements, filters.includeUnreconciled).transactions
     return applyFilters(base, filters)
   }, [filters, visibleStatements, visibleTransactions])
 
@@ -63,6 +60,8 @@ export function DashboardPage() {
 
   const hasData = visibleTransactions.length > 0
   const pendingStatements = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
+  const pendingTypes = visibleTransactions.filter(tx => tx.flags.includes('transaction_type_unclear') &&
+    tx.reviewStatus !== 'confirmed' && tx.reviewStatus !== 'rejected').length
   const displayedCards = showAllCards ? byCard : byCard.slice(0, 10)
 
   return (
@@ -146,6 +145,12 @@ export function DashboardPage() {
         <div className="notice notice-warn" data-testid="currency-summary-warning">
           非人民币结算交易未计入本页金额、趋势和分布：{excludedCurrencies.map(([currency, count]) => `${currency} ${count} 笔`).join('、')}。
           未进行汇率换算，完整记录可在「交易明细」查看。
+        </div>
+      ) : null}
+      {pendingTypes > 0 ? (
+        <div className="notice notice-warn" data-testid="type-summary-warning">
+          有 {pendingTypes} 笔交易类型待确认，默认未计入可信统计。
+          <a href="#/review">前往人工复核</a>，请结合银行原始记录确认资金性质。
         </div>
       ) : null}
       {pendingDuplicates > 0 ? (
