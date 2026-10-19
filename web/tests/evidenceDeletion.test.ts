@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, DEFAULT_SETTINGS } from '../src/db/db'
 import { clearAllData, clearDemoData, saveOriginalFile } from '../src/db/repository'
 import { buildDemoDataset } from '../src/demo/demoData'
+import { LEDGER_REVISION_KEY } from '../src/db/ledgerRevision'
 
 beforeEach(async () => { await db.delete(); await db.open() })
 
@@ -62,7 +63,16 @@ describe('sensitive record deletion', () => {
     await clearAllData({ includeDemo: true })
     expect(await db.attachments.count()).toBe(0)
     expect(await db.reviewNotes.count()).toBe(0)
-    expect(await db.settings.count()).toBe(1)
+    // Clear retains preferences plus the non-financial generation tombstone,
+    // which prevents a plan captured before this clear from recreating data.
+    expect(await db.settings.count()).toBe(2)
+    expect(await db.settings.toArray()).toEqual([
+      { key: 'app', value: DEFAULT_SETTINGS },
+      { key: LEDGER_REVISION_KEY, value: { version: 1, generation: 1, writer: expect.any(String) } },
+    ])
+    expect(await db.transactions.count()).toBe(0)
+    expect(await db.statements.count()).toBe(0)
+    expect(await db.imports.count()).toBe(0)
   })
 
   it('clearing demo data leaves real notes and evidence intact', async () => {

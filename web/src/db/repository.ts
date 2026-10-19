@@ -2,11 +2,13 @@ import type { ExistingSnapshot, IngestResult } from '../core/ingest'
 import type { Table } from 'dexie'
 import type { ImportRecord, Statement, Transaction } from '../core/types'
 import { type AttachmentRow, db } from './db'
+import { assertLedgerRevision, bumpLedgerRevision, LedgerConflictError, readLedgerRevision, type LedgerRevision } from './ledgerRevision'
 
 const DEMO_PURGE_KEY = 'migration:memory-only-demo'
 import { validateBackup } from '../backup/validation'
 import { createJsonBlob } from '../backup/json'
 import { deriveStatementState } from '../core/statementState'
+import { getStatementExpectedTotal } from '../core/reconciliation'
 export { validateBackup } from '../backup/validation'
 
 /** Caller holds the statements + transactions write transaction. Indexed by statementId. */
@@ -25,8 +27,10 @@ async function rebuildStatementStates(statementIds: Iterable<string>): Promise<S
 
 /** Explicit repair for a selected historical statement, never a database-wide migration. */
 export async function recomputeStatement(statementId: string): Promise<Statement | undefined> {
-  return db.transaction('rw', db.statements, db.transactions, async () => {
-    return (await rebuildStatementStates([statementId]))[0]
+  return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
+    const statement = (await rebuildStatementStates([statementId]))[0]
+    if (statement) await bumpLedgerRevision()
+    return statement
   })
 }
 
@@ -54,25 +58,49 @@ export async function readSnapshot(): Promise<Snapshot> {
   })
 }
 
+/** One coherent read of financial rows and their optimistic commit token. */
+export async function readImportSnapshot(): Promise<{ snapshot: Snapshot; revision: LedgerRevision }> {
+  return db.transaction('r', db.statements, db.transactions, db.imports, db.settings, async () => {
+    const [snapshot, revision] = await Promise.all([readSnapshot(), readLedgerRevision()])
+    return { snapshot, revision }
+  })
+}
+
 export function toExistingSnapshot(snapshot: Snapshot): ExistingSnapshot {
   return { statements: snapshot.statements, transactions: snapshot.transactions, imports: snapshot.imports }
 }
 
 /** Persist a batch of ingest results in a single transaction. */
-export async function persistImportResults(results: IngestResult[]): Promise<void> {
+export async function persistImportResults(results: IngestResult[], expectedRevision?: LedgerRevision): Promise<void> {
+  // Interactive planners pass their snapshot token. Prebuilt programmatic batches
+  // capture one before opening the transaction, preserving the repository API.
+  const expected = expectedRevision ?? await readLedgerRevision()
   await db.transaction('rw', db.statements, db.transactions, db.imports, db.settings, async () => {
+    await assertLedgerRevision(expected)
     if (results.some(result => result.record.isDemo || result.statement?.isDemo || result.transactions.some(row => row.isDemo))) {
       await db.settings.delete(DEMO_PURGE_KEY)
     }
     for (const result of results) {
       await db.imports.put(result.record)
       if (!result.statement) continue
-      await db.statements.put(result.statement)
+      const current = await db.statements.get(result.statement.id)
+      const existingBankTotal = current && getStatementExpectedTotal(current).available
+      const incomingBankTotal = getStatementExpectedTotal(result.statement).available
+      if (current && existingBankTotal && incomingBankTotal) {
+        const fields = ['previousBalanceMinor', 'currentBalanceMinor', 'newDebitMinor', 'newCreditMinor', 'chargeMinor', 'interestMinor'] as const
+        if (getStatementExpectedTotal(current).currency !== getStatementExpectedTotal(result.statement).currency ||
+          fields.some(field => current.summary[field] !== result.statement!.summary[field])) {
+          throw new Error('同一账期的银行汇总存在冲突，本次导入已回滚，请核对原始账单。')
+        }
+      }
+      // A partial later source cannot erase an already stored bank basis.
+      await db.statements.put(current && existingBankTotal && !incomingBankTotal ? current : result.statement)
       // Existing rows may have been edited since parsing. Never write them back.
       const insertedIds = new Set(result.inserted.map((tx) => tx.id))
       await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)))
     }
     await rebuildStatementStates(results.flatMap(result => result.statement ? [result.statement.id] : []))
+    await bumpLedgerRevision()
   })
 }
 
@@ -81,8 +109,10 @@ export async function persistLegacyImport(plan: {
   record: ImportRecord
   statements: Statement[]
   inserted: Transaction[]
-}): Promise<void> {
+}, expectedRevision?: LedgerRevision): Promise<void> {
+  const expected = expectedRevision ?? await readLedgerRevision()
   await db.transaction('rw', db.statements, db.transactions, db.imports, db.settings, async () => {
+    await assertLedgerRevision(expected)
     if (plan.record.isDemo || plan.statements.some(row => row.isDemo) || plan.inserted.some(row => row.isDemo)) {
       await db.settings.delete(DEMO_PURGE_KEY)
     }
@@ -95,6 +125,7 @@ export async function persistLegacyImport(plan: {
       await db.transactions.bulkAdd(plan.inserted.slice(offset, offset + 2000))
     }
     await rebuildStatementStates([...plan.statements.map(row => row.id), ...plan.inserted.map(row => row.statementId)])
+    await bumpLedgerRevision()
   })
 }
 
@@ -119,6 +150,7 @@ export async function patchTransactionWithStatements(patch: Partial<Transaction>
       'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'reviewStatus', 'isDemo'] as const)
       .some(key => current[key] !== next[key])
     const statements = affectsReconciliation ? await rebuildStatementStates([current.statementId, next.statementId]) : []
+    await bumpLedgerRevision()
     return { transaction: next, statements }
   })
 }
@@ -133,6 +165,7 @@ export async function updateTransactions(transactions: Transaction[]): Promise<v
     await db.transactions.bulkPut(transactions)
     if (transactions.some(row => row.isDemo)) await db.settings.delete(DEMO_PURGE_KEY)
     await rebuildStatementStates([...prior.flatMap(row => row ? [row.statementId] : []), ...transactions.map(row => row.statementId)])
+    await bumpLedgerRevision()
   })
 }
 
@@ -142,11 +175,11 @@ export async function getReviewNotes(): Promise<Record<string, string>> {
 }
 
 export async function setReviewNote(transactionId: string, note: string): Promise<void> {
-  if (!note.trim()) {
-    await db.reviewNotes.delete(transactionId)
-    return
-  }
-  await db.reviewNotes.put({ transactionId, note: note.trim(), updatedAt: new Date().toISOString() })
+  await db.transaction('rw', db.reviewNotes, db.settings, async () => {
+    if (!note.trim()) await db.reviewNotes.delete(transactionId)
+    else await db.reviewNotes.put({ transactionId, note: note.trim(), updatedAt: new Date().toISOString() })
+    await bumpLedgerRevision()
+  })
 }
 
 export interface ReviewNotePayload {
@@ -300,11 +333,12 @@ async function applyBackupPayload(payload: BackupPayload, storedNotes: Array<{ t
     }
     if (payload.transactions.some(row => row.isDemo) || payload.statements.some(row => row.isDemo) || payload.imports.some(row => row.isDemo)) await db.settings.delete(DEMO_PURGE_KEY)
     if (payload.settings) await db.settings.put({ key: 'app', value: payload.settings })
+    await bumpLedgerRevision()
 }
 
 /** Remove only the fictional demo rows so they can be regenerated cleanly. */
 export async function clearDemoData(): Promise<void> {
-  await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments], async () => {
+  await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments, db.settings], async () => {
     const demoTransactions = await db.transactions.filter((row) => row.isDemo === true).primaryKeys()
     const imports = await db.imports.toArray()
     const demoImportIds = imports.filter((row) => row.isDemo === true).map((row) => row.id)
@@ -314,6 +348,7 @@ export async function clearDemoData(): Promise<void> {
     await db.imports.bulkDelete(demoImportIds)
     await db.reviewNotes.bulkDelete(demoTransactions)
     await db.attachments.bulkDelete(demoHashes)
+    await bumpLedgerRevision()
   })
 }
 
@@ -340,6 +375,7 @@ export async function purgeDemoRows(): Promise<void> {
     // Keep the legacy once-only protocol. A failed earlier operation aborts
     // this transaction before the marker can be committed.
     await db.settings.put({ key: DEMO_PURGE_KEY, value: true })
+    if (demoTransactionIds.length || demoImportIds.length) await bumpLedgerRevision()
   })
 }
 
@@ -350,16 +386,17 @@ export async function ensureDemoRowsPurged(): Promise<void> {
 
 export async function clearAllData(options: { includeDemo: boolean }): Promise<void> {
   if (options.includeDemo) {
-    await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments], async () => {
+    await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments, db.settings], async () => {
       await db.statements.clear()
       await db.transactions.clear()
       await db.imports.clear()
       await db.reviewNotes.clear()
       await db.attachments.clear()
+      await bumpLedgerRevision(true)
     })
     return
   }
-  await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments], async () => {
+  await db.transaction('rw', [db.statements, db.transactions, db.imports, db.reviewNotes, db.attachments, db.settings], async () => {
     // Orphaned sensitive records have no reliable demo provenance. Clearing
     // real data removes them, retaining only evidence and notes demonstrably
     // referenced by surviving fictional rows (including shared file hashes).
@@ -370,6 +407,7 @@ export async function clearAllData(options: { includeDemo: boolean }): Promise<v
     await db.imports.filter((row) => row.isDemo !== true).delete()
     await db.reviewNotes.bulkDelete(await db.reviewNotes.filter((row) => !demoIds.has(row.transactionId)).primaryKeys())
     await db.attachments.bulkDelete(await db.attachments.filter((row) => !demoHashes.has(row.fileHash)).primaryKeys())
+    await bumpLedgerRevision(true)
   })
 }
 
@@ -424,20 +462,34 @@ export async function saveOriginalFile(input: {
   data: ArrayBuffer
   importId: string
   parserId: string
+  generation?: number
 }): Promise<void> {
-  const existing = await db.attachments.get(input.fileHash)
-  if (existing) return
-  const row: AttachmentRow = {
-    fileHash: input.fileHash,
-    fileName: input.fileName,
-    mimeType: input.mimeType ?? mimeTypeForFile(input.fileName),
-    size: input.data.byteLength,
-    data: input.data.slice(0),
-    importId: input.importId,
-    parserId: input.parserId,
-    importedAt: new Date().toISOString(),
-  }
-  await db.attachments.put(row)
+  await db.transaction('rw', db.attachments, db.imports, db.settings, async () => {
+    if (input.generation !== undefined && ((await readLedgerRevision()).generation !== input.generation || !await db.imports.get(input.importId))) {
+      throw new LedgerConflictError(true)
+    }
+    const existing = await db.attachments.get(input.fileHash)
+    if (existing) return
+    const row: AttachmentRow = {
+      fileHash: input.fileHash, fileName: input.fileName,
+      mimeType: input.mimeType ?? mimeTypeForFile(input.fileName), size: input.data.byteLength,
+      data: input.data.slice(0), importId: input.importId, parserId: input.parserId, importedAt: new Date().toISOString(),
+    }
+    await db.attachments.put(row)
+  })
+}
+
+/** Evidence warnings may annotate an existing import; they never recreate a cleared row. */
+export async function markImportEvidenceMissing(record: ImportRecord, generation: number): Promise<void> {
+  await db.transaction('rw', db.imports, db.settings, db.attachments, async () => {
+    if ((await readLedgerRevision()).generation !== generation) return
+    if (await db.attachments.get(record.fileHash)) return
+    const current = await db.imports.get(record.id)
+    const warning = '原始文件未保留，可稍后重新导入。'
+    if (current && !current.message.includes(warning)) {
+      await db.imports.put({ ...current, message: `${current.message}，${warning}` })
+    }
+  })
 }
 
 export async function getAttachment(fileHash: string): Promise<AttachmentRow | undefined> {
