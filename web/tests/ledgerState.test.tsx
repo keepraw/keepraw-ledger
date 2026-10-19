@@ -27,6 +27,39 @@ beforeEach(async () => {
 })
 
 describe('persisted ledger state', () => {
+  it('does not read real notes in demo and keeps demo writes in memory across queued switches', async () => {
+    await repository.setReviewNote('synthetic-orphan', 'real orphan note')
+    await saveSettings({ ...DEFAULT_SETTINGS, demoMode: true })
+    const reads = vi.spyOn(repository, 'getReviewNotes')
+    await mount()
+    expect(reads).not.toHaveBeenCalled()
+    expect(app.state.notes).toEqual({})
+    const demoId = app.visibleTransactions[0]!.id
+    const saved = await db.reviewNotes.toArray()
+    await act(async () => {
+      const switchMode = app.setSettings({ demoMode: false })
+      const save = app.saveNote(demoId, 'demo only')
+      await Promise.all([switchMode, save])
+    })
+    expect(await db.reviewNotes.toArray()).toEqual(saved)
+    expect(app.state.notes).toEqual({ 'synthetic-orphan': 'real orphan note' })
+    await act(async () => { await app.setSettings({ demoMode: true }) })
+    expect(app.state.notes).toEqual({ [demoId]: 'demo only' })
+    expect(await db.reviewNotes.toArray()).toEqual(saved)
+  })
+
+  it('rejects a real note write queued behind entering demo', async () => {
+    await mount()
+    const id = app.visibleTransactions[0]!.id
+    await act(async () => {
+      const switchMode = app.setSettings({ demoMode: true })
+      const save = app.saveNote(id, 'must not persist')
+      await switchMode
+      await expect(save).rejects.toThrow(/演示模式/)
+    })
+    expect(await db.reviewNotes.count()).toBe(0)
+  })
+
   it('loads one coherent snapshot and skips completed legacy cleanup on reopening', async () => {
     const reads = vi.spyOn(repository, 'readSnapshot')
     await mount()
