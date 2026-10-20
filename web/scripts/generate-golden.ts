@@ -16,18 +16,17 @@ import { resolve } from 'node:path'
 interface Args {
   input: string
   out: string
-  desensitize: boolean
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { input: '', out: '', desensitize: true }
+  const args: Args = { input: '', out: '' }
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
     if (token === '--input') args.input = argv[++i] ?? ''
     else if (token === '--out') args.out = argv[++i] ?? ''
-    else if (token === '--no-desensitize') args.desensitize = false
+    else throw new Error('Golden generation requires desensitization; unsupported argument.')
   }
-  if (!args.input || !args.out) throw new Error('usage: generate-golden.ts --input <bill> --out <golden-dir> [--no-desensitize]')
+  if (!args.input || !args.out) throw new Error('usage: generate-golden.ts --input <bill> --out <golden-dir>')
   return args
 }
 
@@ -77,7 +76,7 @@ export async function main(): Promise<number> {
   )
   const occurrences = assignOccurrences(fingerprints)
   const nativeIds = fingerprints.map((fp, i) => transactionId(fp, occurrences[i]!.occurrence))
-  const statement = normalizeWebStatement(parsed, nativeIds, { desensitize: args.desensitize })
+  const statement = normalizeWebStatement(parsed, nativeIds)
 
   mkdirSync(outDir, { recursive: true })
   const metaPath = resolve(outDir, 'input.meta.json')
@@ -88,7 +87,7 @@ export async function main(): Promise<number> {
     }
   }
   writeFileSync(resolve(outDir, 'web.json'), JSON.stringify(statement, null, 2) + '\n', 'utf-8')
-  console.log(`bank=${parsed.bank} card=${cardLast4} cycle=${parsed.cycleStart}/${parsed.cycleEnd} txs=${parsed.transactions.length} parser=${parsed.parserId}`)
-  console.log(`wrote ${resolve(outDir, 'web.json')} (generator=${GOLDEN_GENERATOR_WEB}, desensitized=${args.desensitize})`)
+  console.log(`bank=${statement.bank} txs=${statement.transactionCount} parser=${statement.parserName}`)
+  console.log(`wrote web.json (generator=${GOLDEN_GENERATOR_WEB}, desensitized=true)`)
   return 0
 }

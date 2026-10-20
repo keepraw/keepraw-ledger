@@ -75,3 +75,28 @@ special cases. History: on the old `main` the parser was reverted (`f1c81b6`)
 and the baseline temporarily used an unregistered copy; after the
 experimental → main migration the production parser is authoritative and no
 duplicate exists in the tree.
+
+## New output privacy policy (AUD-013)
+
+Generator `keepraw-golden-ts/1.1.0` keeps `golden/v1` and leaves all frozen JSON
+references unchanged. Newly generated shareable output omits source debug text
+(`rawText: ""`); parsed descriptions retain only a fixed structural prefix and a
+deterministic, idempotent merchant placeholder. The standalone raw-text helper
+projects only currency/decimal pairs and ISO dates, never whole CJK runs merely
+because they contain words such as `消费`.
+
+The normalizer rejects unexpected text in structural fields, full account
+numbers in card-tail fields, nonnumeric source positions and native identifiers
+that do not match the computed financial fingerprint. Amounts, currencies,
+dates, directions, counts, valid card tails and native identities remain the
+independent comparison evidence; they are not rewritten to make a baseline pass.
+These retained fields and deterministic hashes remain linkable financial
+metadata, not anonymous data.
+
+The CLI always desensitizes output and rejects `--no-desensitize`. Successful
+logs omit source paths, card tails and cycles; failures do not echo parser text
+or filenames. Input SHA-256 checks against `input.meta.json` still apply.
+The adapter's explicit `desensitize: false` option remains for local test/debug
+comparisons, not for generating shareable fixtures. Review new output before
+publication. Never regenerate the frozen references to accept a privacy fix;
+the regression suite checks their original hashes and financial comparisons.

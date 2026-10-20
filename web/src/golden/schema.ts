@@ -6,7 +6,7 @@
  */
 
 export const GOLDEN_SCHEMA = 'golden/v1' as const
-export const GOLDEN_GENERATOR_WEB = 'keepraw-golden-ts/1.0.0' as const
+export const GOLDEN_GENERATOR_WEB = 'keepraw-golden-ts/1.1.0' as const
 
 export type Direction = 'debit' | 'credit'
 
