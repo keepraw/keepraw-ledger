@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { formatMinor } from '../../core/money'
 import { buildDuplicateReviewDetails } from '../../core/migrationAudit'
@@ -20,7 +20,10 @@ export function ReviewPage() {
   const [tab, setTab] = useState<'statements' | 'transactions'>('statements')
   const [showAllStatements, setShowAllStatements] = useState(false)
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null)
-  const [draftNote, setDraftNote] = useState('')
+  const [draft, setDraft] = useState({ demoMode: state.demoMode, text: '' })
+  const draftNote = draft.demoMode === state.demoMode ? draft.text : ''
+  const [noteError, setNoteError] = useState<string | null>(null)
+  useEffect(() => { setDraft({ demoMode: state.demoMode, text: '' }); setNoteError(null) }, [state.demoMode])
   const [recomputing, setRecomputing] = useState(false)
   const [recomputeError, setRecomputeError] = useState<string | null>(null)
   const duplicateDetails = useMemo(() => buildDuplicateReviewDetails(visibleTransactions,
@@ -289,8 +292,8 @@ export function ReviewPage() {
         <div className="notice notice-warn">
           <DemoBadge />
           <div>
-            <strong>复核操作只作用于演示数据</strong>
-            <p>演示模式下真实账单已被隐藏，复核结果同样保存在本机 IndexedDB 中。</p>
+            <strong>演示备注与真实备注隔离</strong>
+            <p>演示备注仅保存在当前页面会话的内存中，刷新后消失，不写入真实账本或备份。</p>
           </div>
         </div>
       ) : null}
@@ -300,7 +303,7 @@ export function ReviewPage() {
           <div className="card-head">
             <div>
               <h2>复核备注</h2>
-              <p>可以针对第一笔待复核交易记录备注，备注会持久保存在本机</p>
+              <p>{state.demoMode ? '针对第一笔演示交易记录备注，仅在本次会话中保留。' : '可以针对第一笔待复核交易记录备注，备注会持久保存在本机'}</p>
             </div>
           </div>
           <div className="card-pad row">
@@ -312,7 +315,7 @@ export function ReviewPage() {
               // Cap new input at the validated backup bound; previously stored
               // longer notes remain fully backable up to the same bound.
               maxLength={MAX_NOTE_CHARS}
-              onChange={(event) => setDraftNote(event.target.value)}
+              onChange={(event) => setDraft({ demoMode: state.demoMode, text: event.target.value })}
             />
             <button
               className="btn"
@@ -320,13 +323,16 @@ export function ReviewPage() {
               onClick={() => {
                 const target = flaggedTransactions[0]
                 if (!target) return
-                void saveNote(target.id, draftNote)
-                setDraftNote('')
+                setNoteError(null)
+                void saveNote(target.id, draftNote).then(() => setDraft({ demoMode: state.demoMode, text: '' })).catch(error => {
+                  setNoteError(error instanceof Error ? error.message : '保存备注失败，请重试。')
+                })
               }}
             >
               保存备注
             </button>
           </div>
+          {noteError ? <div className="notice notice-warn" role="alert">{noteError}</div> : null}
           {Object.keys(state.notes).length > 0 ? (
             <div className="card-pad stack">
               {Object.entries(state.notes).map(([id, note]) => {

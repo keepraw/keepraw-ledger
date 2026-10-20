@@ -41,6 +41,7 @@ import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/
 import { triggerDownload } from '../export/tabular'
 import { downloadLedgerArchive, ledgerArchiveFileName } from '../export/ledgerArchive'
 import { readJsonBackup } from '../backup/json'
+import { MAX_NOTE_CHARS } from '../backup/validation'
 
 export interface ImportProgress {
   fileName: string
@@ -113,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY)
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [demoNotes, setDemoNotes] = useState<Record<string, string>>({})
   const [ready, setReady] = useState(false)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
   const initialised = useRef(false)
@@ -129,11 +131,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const reload = useCallback(async (firstVisit = false) => {
-    const [next, nextNotes, storedSettings] = await Promise.all([readSnapshot(), getReviewNotes(), loadSettings()])
+    const [next, storedSettings] = await Promise.all([readSnapshot(), loadSettings()])
     const nextSettings = firstVisit && next.imports.length === 0 ? { ...DEFAULT_SETTINGS, demoMode: true } : storedSettings
     if (nextSettings !== storedSettings) await saveSettings(nextSettings)
     setSnapshot(next)
-    setNotes(nextNotes)
+    setNotes(nextSettings.demoMode ? {} : await getReviewNotes())
     committedPreferences.current = nextSettings
     if (pendingPreferences.current === 0) setSettingsState(nextSettings)
   }, [])
@@ -170,6 +172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         committedPreferences.current = current
         const next = { ...current, ...ownedPatch }
         await saveSettings(next)
+        if (ownedPatch.demoMode !== undefined) setNotes(next.demoMode ? {} : await getReviewNotes())
         committedPreferences.current = next
       } finally {
         pendingPreferences.current--
@@ -380,15 +383,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (statement) setSnapshot(current => ({ ...current, statements: mergeStatementStates(current.statements, [statement]) }))
   }), [enqueue])
 
-  const saveNote = useCallback((transactionId: string, note: string) => enqueue(async () => {
-    await setReviewNote(transactionId, note)
-    setNotes(current => {
-      const next = { ...current }
-      if (note.trim()) next[transactionId] = note.trim()
-      else delete next[transactionId]
-      return next
+  const saveNote = useCallback((transactionId: string, note: string) => {
+    // Capture the caller's ownership before queueing. A later mode switch must
+    // never turn an in-memory demo write into a real database write.
+    const demoRequest = settings.demoMode
+    return enqueue(async () => {
+      if (demoRequest) {
+        if (!getDemoSnapshot().transactions.some(row => row.id === transactionId)) throw new Error('演示模式只能记录演示交易的备注。')
+        if (note.trim().length > MAX_NOTE_CHARS) throw new Error('备注过长。')
+        setDemoNotes(current => {
+          const next = { ...current }
+          if (note.trim()) next[transactionId] = note.trim()
+          else delete next[transactionId]
+          return next
+        })
+        return
+      }
+      if ((await loadSettings()).demoMode) throw new Error('演示模式已开启，请切回真实模式后重新保存备注。')
+      await setReviewNote(transactionId, note)
+      setNotes(current => {
+        const next = { ...current }
+        if (note.trim()) next[transactionId] = note.trim()
+        else delete next[transactionId]
+        return next
+      })
     })
-  }), [enqueue])
+  }, [enqueue, settings.demoMode])
 
   const backupData = useCallback(() => enqueue(async () => {
     triggerDownload(
@@ -481,7 +501,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo<AppApi>(
     () => ({
-      state: { ...snapshot, ready, settings, notes, progress, demoMode: settings.demoMode },
+      state: { ...snapshot, ready, settings, notes: settings.demoMode ? demoNotes : notes, progress, demoMode: settings.demoMode },
       refresh,
       setSettings,
       importFiles,
@@ -507,6 +527,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ready,
       settings,
       notes,
+      demoNotes,
       progress,
       refresh,
       setSettings,
