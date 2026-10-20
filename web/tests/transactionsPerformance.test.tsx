@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { sortTransactions } from '../src/ui/pages/TransactionsPage'
-import type { Transaction } from '../src/core/types'
+import { TRANSACTION_TYPES, type Transaction } from '../src/core/types'
 import { ingestSynthetic } from './fixtures/identity'
 
 const base = ingestSynthetic(['sort workload']).transactions[0]!
@@ -44,6 +44,28 @@ describe('AUD-002 repeated text sorting', () => {
           .toEqual(historical(rows, direction).map(tx => tx.id))
       }
       expect(rows.map(tx => tx.id)).toEqual(original)
+    }
+  })
+
+  it('groups repeated transaction types without changing stable date ties', () => {
+    const rows = makeRows(600, ['合成商户']).map((tx, index) => ({ ...tx, type: TRANSACTION_TYPES[index % TRANSACTION_TYPES.length]! }))
+    for (const direction of [1, -1]) {
+      const expected = [...rows].sort((a, b) => a.type === b.type
+        ? (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '') : collator.compare(a.type, b.type) * direction)
+      expect(sortTransactions(rows, 'type', direction === 1 ? 'asc' : 'desc')).toEqual(expected)
+    }
+  })
+
+  it('keeps null text last even in the grouped path, independently of direction', () => {
+    const rows = makeRows(600, ['合成商户', 'Coffee']).map((tx, index) => index % 7 ? tx : { ...tx, description: null as unknown as string })
+    for (const direction of [1, -1]) {
+      const expected = [...rows].sort((a, b) => {
+        if (a.description === b.description) return (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '')
+        if (a.description === null) return 1
+        if (b.description === null) return -1
+        return collator.compare(a.description, b.description) * direction
+      })
+      expect(sortTransactions(rows, 'description', direction === 1 ? 'asc' : 'desc')).toEqual(expected)
     }
   })
 
