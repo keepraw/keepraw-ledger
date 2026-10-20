@@ -1,0 +1,755 @@
+{
+  "metadata": {
+    "date": "2026-10-20T05:36:39.336Z",
+    "mode": "performance",
+    "seed": 1263684657,
+    "source": "/workspace/keepraw-ledger/web",
+    "commit": "2c6d42c45ceb2da3866af9cffe6bae1fc529cc41",
+    "reusedProfileRoot": null,
+    "node": "v24.19.0",
+    "cpu": "AMD EPYC 9V45 96-Core Processor",
+    "cpus": 5,
+    "memoryBytes": 18882674688,
+    "os": {
+      "platform": "linux",
+      "release": "6.18.55",
+      "arch": "x64"
+    },
+    "sampleCounts": {
+      "imports": 3,
+      "operations": 5,
+      "edits": 5,
+      "ui": 5,
+      "startup": 3,
+      "actualBackup": 3
+    },
+    "temporary": "/workspace/keepraw-ledger/work/aud002/large-ledger-e6SuHC",
+    "sourceFiles": {
+      "app/AppStore.tsx": "8d8d55c75ce9bff06acde2f329c87835173d472d6079133f270a25eb9e8ae34c",
+      "db/db.ts": "5af871b83069bb1da941fed779b6fde63cb78cf6537018a0be50eff34c540f54",
+      "db/repository.ts": "5c696a2dfe472952427005204754d454a165a47f792253b953a6451475e5a2e9",
+      "backup/json.ts": "25e0302aa465ecee75fe953dfbb2ba2e5dbb1fcff22782ad5a7ca1eb09f2a17a",
+      "backup/archive.ts": "1023a7d7488f119948ccdabea823567e341f64c5376e18f6a8b8610ccddf915a",
+      "backup/zipSafety.ts": "2b9dcb30da05010a0883dac878973dded14a4cfd99f40a36b1d1264c7013f03a",
+      "ui/pages/TransactionsPage.tsx": "2ee2e868fca600debc1b5da0b4ade1e2882d39fe6f71c53211599c46e4b5f37d",
+      "core/analytics.ts": "4cb7ffff9ca49ffcbfc6cf7ab56ff3639bd01c89d361e96ac67fbdb9d7bc79cf"
+    },
+    "origin": "http://127.0.0.1:41361",
+    "browser": "154.0.8037.57",
+    "completedAt": "2026-10-20T05:38:23.744Z"
+  },
+  "cases": [
+    {
+      "count": 18000,
+      "fixtures": [
+        {
+          "name": "python-18000-0.xlsx",
+          "rows": 18000,
+          "bytes": 5590527
+        }
+      ],
+      "imports": [
+        {
+          "parts": [
+            {
+              "previewMs": 1037.2999999999884,
+              "confirmMs": 1449.5,
+              "totalMs": 2508.6999999999825,
+              "record": {
+                "status": "imported",
+                "transactionCount": 18000
+              },
+              "valid": 18000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 444.79999999998836,
+                  "duration": 1013
+                },
+                {
+                  "startTime": 1463.6999999999825,
+                  "duration": 95
+                }
+              ]
+            }
+          ],
+          "previewMs": 1037.2999999999884,
+          "confirmMs": 1449.5,
+          "totalMs": 2508.6999999999825
+        },
+        {
+          "parts": [
+            {
+              "previewMs": 1067.7000000000116,
+              "confirmMs": 1432.3999999999942,
+              "totalMs": 2510.9000000000233,
+              "record": {
+                "status": "imported",
+                "transactionCount": 18000
+              },
+              "valid": 18000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 333.6000000000058,
+                  "duration": 1042
+                },
+                {
+                  "startTime": 1381.1000000000058,
+                  "duration": 92
+                }
+              ]
+            }
+          ],
+          "previewMs": 1067.7000000000116,
+          "confirmMs": 1432.3999999999942,
+          "totalMs": 2510.9000000000233
+        },
+        {
+          "parts": [
+            {
+              "previewMs": 1039.2999999999884,
+              "confirmMs": 1634,
+              "totalMs": 2675.6999999999825,
+              "record": {
+                "status": "imported",
+                "transactionCount": 18000
+              },
+              "valid": 18000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 361.5999999999767,
+                  "duration": 1016
+                },
+                {
+                  "startTime": 1383.2999999999884,
+                  "duration": 92
+                }
+              ]
+            }
+          ],
+          "previewMs": 1039.2999999999884,
+          "confirmMs": 1634,
+          "totalMs": 2675.6999999999825
+        }
+      ],
+      "samples": [
+        {
+          "readMs": 104,
+          "filterAllMs": 3.1000000000058208,
+          "dateSortMs": 9.700000000011642,
+          "filteredSearchMs": 3.1999999999825377,
+          "descriptionSortMs": 18.800000000017462,
+          "records": 18000,
+          "searchAllMs": 8.299999999988358,
+          "searchedRecords": 765,
+          "filteredRecords": 52,
+          "backupReadMs": 160.20000000001164,
+          "backupEncodeBlobMs": 98.69999999998254,
+          "backupTotalMs": 258.8999999999942,
+          "backupBytes": 22657992,
+          "refreshResolvedMs": 128.80000000001746,
+          "refreshCommitMs": 128.70000000001164,
+          "refreshPaintMs": 145.70000000001164
+        },
+        {
+          "readMs": 109.59999999997672,
+          "filterAllMs": 2.1000000000058208,
+          "dateSortMs": 15.39999999999418,
+          "filteredSearchMs": 2.3000000000174623,
+          "descriptionSortMs": 19.699999999982538,
+          "records": 18000,
+          "searchAllMs": 3.8000000000174623,
+          "searchedRecords": 765,
+          "filteredRecords": 52,
+          "backupReadMs": 178.5,
+          "backupEncodeBlobMs": 102.89999999999418,
+          "backupTotalMs": 281.3999999999942,
+          "backupBytes": 22657992,
+          "refreshResolvedMs": 122.20000000001164,
+          "refreshCommitMs": 122,
+          "refreshPaintMs": 132.20000000001164
+        },
+        {
+          "readMs": 109.59999999997672,
+          "filterAllMs": 1.8000000000174623,
+          "dateSortMs": 13,
+          "filteredSearchMs": 1.8999999999941792,
+          "descriptionSortMs": 19.60000000000582,
+          "records": 18000,
+          "searchAllMs": 3.5,
+          "searchedRecords": 765,
+          "filteredRecords": 52,
+          "backupReadMs": 145.29999999998836,
+          "backupEncodeBlobMs": 98.20000000001164,
+          "backupTotalMs": 243.5,
+          "backupBytes": 22657992,
+          "refreshResolvedMs": 122.39999999999418,
+          "refreshCommitMs": 122.19999999998254,
+          "refreshPaintMs": 124.09999999997672
+        },
+        {
+          "readMs": 114.40000000002328,
+          "filterAllMs": 1.6999999999825377,
+          "dateSortMs": 13.89999999999418,
+          "filteredSearchMs": 2,
+          "descriptionSortMs": 19.5,
+          "records": 18000,
+          "searchAllMs": 3.400000000023283,
+          "searchedRecords": 765,
+          "filteredRecords": 52,
+          "backupReadMs": 149,
+          "backupEncodeBlobMs": 96.29999999998836,
+          "backupTotalMs": 245.29999999998836,
+          "backupBytes": 22657992,
+          "refreshResolvedMs": 124.20000000001164,
+          "refreshCommitMs": 124,
+          "refreshPaintMs": 132.79999999998836
+        },
+        {
+          "readMs": 117.20000000001164,
+          "filterAllMs": 1.7999999999883585,
+          "dateSortMs": 14.400000000023283,
+          "filteredSearchMs": 2,
+          "descriptionSortMs": 19.599999999976717,
+          "records": 18000,
+          "searchAllMs": 3.400000000023283,
+          "searchedRecords": 765,
+          "filteredRecords": 52,
+          "backupReadMs": 150.5,
+          "backupEncodeBlobMs": 97.5,
+          "backupTotalMs": 248,
+          "backupBytes": 22657992,
+          "refreshResolvedMs": 174.5,
+          "refreshCommitMs": 174.30000000001746,
+          "refreshPaintMs": 177.80000000001746
+        }
+      ],
+      "startup": [
+        289.70000000001164,
+        301.29999999998836,
+        269.79999999998836
+      ],
+      "edits": [
+        {
+          "resolvedMs": 1.8999999999941792,
+          "commitMs": 20.39999999999418,
+          "paintMs": 29.199999999982538,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 1,
+          "commitMs": 17.300000000017462,
+          "paintMs": 33.30000000001746,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 0.8999999999941792,
+          "commitMs": 16.29999999998836,
+          "paintMs": 33.29999999998836,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 0.7999999999883585,
+          "commitMs": 15.5,
+          "paintMs": 33.39999999999418,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 1.1000000000058208,
+          "commitMs": 16.10000000000582,
+          "paintMs": 33.30000000001746,
+          "fullReads": 0
+        }
+      ],
+      "ui": [
+        {
+          "searchMs": 29.5,
+          "dateSortMs": 36.39999999999418,
+          "descriptionSortMs": 51.80000000001746
+        },
+        {
+          "searchMs": 28.5,
+          "dateSortMs": 36.30000000001746,
+          "descriptionSortMs": 48
+        },
+        {
+          "searchMs": 31.5,
+          "dateSortMs": 38,
+          "descriptionSortMs": 48.89999999999418
+        },
+        {
+          "searchMs": 30.400000000023283,
+          "dateSortMs": 36.10000000000582,
+          "descriptionSortMs": 46.80000000001746
+        },
+        {
+          "searchMs": 29.60000000000582,
+          "dateSortMs": 45.60000000000582,
+          "descriptionSortMs": 49.29999999998836
+        }
+      ],
+      "usage": {
+        "samples": [
+          21514595,
+          21514595,
+          21514595,
+          21514595,
+          21514595
+        ],
+        "usage": 21514595,
+        "details": {
+          "quota": 10758932835,
+          "usage": 21514595,
+          "usageDetails": {
+            "indexedDB": 21514595
+          }
+        }
+      },
+      "actualBackup": [
+        {
+          "bytes": 17801591,
+          "ms": 241.20000000001164,
+          "sha256": "002fbe0a2d4b5c85ac71f26f496eebf31ac146c86d8de7b34aa53b199ef5cff4"
+        },
+        {
+          "bytes": 17801591,
+          "ms": 226.5,
+          "sha256": "c23058c8f08b004d2b122810c8c4778670d5ec8c9e3a07156a2abfeaae6dc764"
+        },
+        {
+          "bytes": 17801591,
+          "ms": 224.60000000000582,
+          "sha256": "51e4094bc2e2a4f176b259c7afeb0c802f337900fa37079329f6472df12bb8eb"
+        }
+      ]
+    },
+    {
+      "count": 100000,
+      "fixtures": [
+        {
+          "name": "python-100000-0.xlsx",
+          "rows": 50000,
+          "bytes": 15603451
+        },
+        {
+          "name": "python-100000-50000.xlsx",
+          "rows": 50000,
+          "bytes": 15607569
+        }
+      ],
+      "imports": [
+        {
+          "parts": [
+            {
+              "previewMs": 2926.899999999994,
+              "confirmMs": 3878.399999999994,
+              "totalMs": 6824,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 404.9000000000233,
+                  "duration": 2884
+                },
+                {
+                  "startTime": 3294.600000000006,
+                  "duration": 288
+                },
+                {
+                  "startTime": 6989,
+                  "duration": 97
+                },
+                {
+                  "startTime": 7087.600000000006,
+                  "duration": 61
+                }
+              ]
+            },
+            {
+              "previewMs": 3702.7999999999884,
+              "confirmMs": 5963.3000000000175,
+              "totalMs": 9677.399999999994,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 7561.8000000000175,
+                  "duration": 98
+                },
+                {
+                  "startTime": 7663.600000000006,
+                  "duration": 3302
+                },
+                {
+                  "startTime": 11166.700000000012,
+                  "duration": 98
+                },
+                {
+                  "startTime": 11266.200000000012,
+                  "duration": 641
+                },
+                {
+                  "startTime": 16561.900000000023,
+                  "duration": 200
+                },
+                {
+                  "startTime": 16777.900000000023,
+                  "duration": 139
+                }
+              ]
+            }
+          ],
+          "previewMs": 6629.6999999999825,
+          "confirmMs": 9841.700000000012,
+          "totalMs": 16501.399999999994
+        },
+        {
+          "parts": [
+            {
+              "previewMs": 3012.600000000006,
+              "confirmMs": 3791.399999999994,
+              "totalMs": 6822.600000000006,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 457.4000000000233,
+                  "duration": 2972
+                },
+                {
+                  "startTime": 3437.7000000000116,
+                  "duration": 294
+                },
+                {
+                  "startTime": 7033.600000000006,
+                  "duration": 97
+                },
+                {
+                  "startTime": 7132.600000000006,
+                  "duration": 69
+                }
+              ]
+            },
+            {
+              "previewMs": 3905.3000000000175,
+              "confirmMs": 5696.299999999988,
+              "totalMs": 9625.600000000006,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 7599.400000000023,
+                  "duration": 102
+                },
+                {
+                  "startTime": 7702.8000000000175,
+                  "duration": 3496
+                },
+                {
+                  "startTime": 11406.200000000012,
+                  "duration": 95
+                },
+                {
+                  "startTime": 11502.200000000012,
+                  "duration": 670
+                },
+                {
+                  "startTime": 16493.5,
+                  "duration": 216
+                },
+                {
+                  "startTime": 16737.20000000001,
+                  "duration": 130
+                }
+              ]
+            }
+          ],
+          "previewMs": 6917.900000000023,
+          "confirmMs": 9487.699999999983,
+          "totalMs": 16448.20000000001
+        },
+        {
+          "parts": [
+            {
+              "previewMs": 3005.600000000006,
+              "confirmMs": 3769.7000000000116,
+              "totalMs": 6789.500000000029,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 426.30000000001746,
+                  "duration": 2968
+                },
+                {
+                  "startTime": 3400.3000000000175,
+                  "duration": 290
+                },
+                {
+                  "startTime": 6972.900000000023,
+                  "duration": 107
+                },
+                {
+                  "startTime": 7081.700000000012,
+                  "duration": 64
+                }
+              ]
+            },
+            {
+              "previewMs": 3681.5999999999767,
+              "confirmMs": 5894.900000000023,
+              "totalMs": 9604.699999999953,
+              "record": {
+                "status": "imported",
+                "transactionCount": 50000
+              },
+              "valid": 50000,
+              "anomalies": 0,
+              "longTasks": [
+                {
+                  "startTime": 7522.400000000023,
+                  "duration": 100
+                },
+                {
+                  "startTime": 7624,
+                  "duration": 3283
+                },
+                {
+                  "startTime": 11101.100000000035,
+                  "duration": 93
+                },
+                {
+                  "startTime": 11195.799999999988,
+                  "duration": 644
+                },
+                {
+                  "startTime": 16422.5,
+                  "duration": 206
+                },
+                {
+                  "startTime": 16652.900000000023,
+                  "duration": 129
+                }
+              ]
+            }
+          ],
+          "previewMs": 6687.1999999999825,
+          "confirmMs": 9664.600000000035,
+          "totalMs": 16394.199999999983
+        }
+      ],
+      "samples": [
+        {
+          "readMs": 559.8999999999942,
+          "filterAllMs": 10.700000000011642,
+          "dateSortMs": 95.89999999999418,
+          "filteredSearchMs": 14.39999999999418,
+          "descriptionSortMs": 214.10000000000582,
+          "records": 100000,
+          "searchAllMs": 28.89999999999418,
+          "searchedRecords": 4266,
+          "filteredRecords": 271,
+          "backupReadMs": 1001.6000000000058,
+          "backupEncodeBlobMs": 518.7000000000116,
+          "backupTotalMs": 1520.3000000000175,
+          "backupBytes": 119137556,
+          "refreshResolvedMs": 723.6000000000058,
+          "refreshCommitMs": 723.1000000000058,
+          "refreshPaintMs": 731.7999999999884
+        },
+        {
+          "readMs": 572.7000000000116,
+          "filterAllMs": 14.5,
+          "dateSortMs": 113.19999999998254,
+          "filteredSearchMs": 13.700000000011642,
+          "descriptionSortMs": 203.70000000001164,
+          "records": 100000,
+          "searchAllMs": 34.5,
+          "searchedRecords": 4266,
+          "filteredRecords": 271,
+          "backupReadMs": 807.0999999999767,
+          "backupEncodeBlobMs": 536.5,
+          "backupTotalMs": 1343.5999999999767,
+          "backupBytes": 119137556,
+          "refreshResolvedMs": 713.1000000000058,
+          "refreshCommitMs": 712.8000000000175,
+          "refreshPaintMs": 722
+        },
+        {
+          "readMs": 586.7000000000116,
+          "filterAllMs": 9,
+          "dateSortMs": 98.89999999999418,
+          "filteredSearchMs": 11.60000000000582,
+          "descriptionSortMs": 189.5,
+          "records": 100000,
+          "searchAllMs": 28.5,
+          "searchedRecords": 4266,
+          "filteredRecords": 271,
+          "backupReadMs": 836.2999999999884,
+          "backupEncodeBlobMs": 543.3000000000175,
+          "backupTotalMs": 1379.6000000000058,
+          "backupBytes": 119137556,
+          "refreshResolvedMs": 920.1999999999825,
+          "refreshCommitMs": 919.1999999999825,
+          "refreshPaintMs": 929.1000000000058
+        },
+        {
+          "readMs": 621.4000000000233,
+          "filterAllMs": 86.09999999997672,
+          "dateSortMs": 224.5,
+          "filteredSearchMs": 14.5,
+          "descriptionSortMs": 194.5,
+          "records": 100000,
+          "searchAllMs": 31.20000000001164,
+          "searchedRecords": 4266,
+          "filteredRecords": 271,
+          "backupReadMs": 953.8999999999942,
+          "backupEncodeBlobMs": 585.7000000000116,
+          "backupTotalMs": 1539.6000000000058,
+          "backupBytes": 119137556,
+          "refreshResolvedMs": 723,
+          "refreshCommitMs": 722.5,
+          "refreshPaintMs": 736.8999999999942
+        },
+        {
+          "readMs": 548.2999999999884,
+          "filterAllMs": 10.900000000023283,
+          "dateSortMs": 106.5,
+          "filteredSearchMs": 14.39999999999418,
+          "descriptionSortMs": 179.39999999999418,
+          "records": 100000,
+          "searchAllMs": 35.60000000000582,
+          "searchedRecords": 4266,
+          "filteredRecords": 271,
+          "backupReadMs": 822.5,
+          "backupEncodeBlobMs": 517.2999999999884,
+          "backupTotalMs": 1339.7999999999884,
+          "backupBytes": 119137556,
+          "refreshResolvedMs": 719.8999999999942,
+          "refreshCommitMs": 719.5,
+          "refreshPaintMs": 731.3999999999942
+        }
+      ],
+      "startup": [
+        970.0999999999767,
+        893.8999999999942,
+        1024.8000000000175
+      ],
+      "edits": [
+        {
+          "resolvedMs": 2.6999999999825377,
+          "commitMs": 119.29999999998836,
+          "paintMs": 119.89999999999418,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 1.6999999999825377,
+          "commitMs": 163.60000000000582,
+          "paintMs": 164,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 1.7999999999883585,
+          "commitMs": 135.10000000000582,
+          "paintMs": 135.60000000000582,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 2.2999999999883585,
+          "commitMs": 114.79999999998836,
+          "paintMs": 115.09999999997672,
+          "fullReads": 0
+        },
+        {
+          "resolvedMs": 1.3000000000174623,
+          "commitMs": 110.40000000002328,
+          "paintMs": 110.80000000001746,
+          "fullReads": 0
+        }
+      ],
+      "ui": [
+        {
+          "searchMs": 66,
+          "dateSortMs": 121.89999999999418,
+          "descriptionSortMs": 191.39999999999418
+        },
+        {
+          "searchMs": 66.19999999998254,
+          "dateSortMs": 120.20000000001164,
+          "descriptionSortMs": 194.19999999998254
+        },
+        {
+          "searchMs": 61.20000000001164,
+          "dateSortMs": 121.39999999999418,
+          "descriptionSortMs": 216.80000000001746
+        },
+        {
+          "searchMs": 61.89999999999418,
+          "dateSortMs": 123.5,
+          "descriptionSortMs": 194.5
+        },
+        {
+          "searchMs": 63.39999999999418,
+          "dateSortMs": 121.29999999998836,
+          "descriptionSortMs": 194.60000000000582
+        }
+      ],
+      "usage": {
+        "samples": [
+          66361631,
+          66361631,
+          66361631,
+          66361631,
+          66361631
+        ],
+        "usage": 66361631,
+        "details": {
+          "quota": 10803779871,
+          "usage": 66361631,
+          "usageDetails": {
+            "indexedDB": 66361631
+          }
+        }
+      },
+      "actualBackup": [
+        {
+          "bytes": 94371800,
+          "ms": 1434,
+          "sha256": "b2d0b3e5c65a9e007cf13e026d3dc2d6a270a4086b2d3cf6be59d9b02031103e"
+        },
+        {
+          "bytes": 94371800,
+          "ms": 1311.3999999999942,
+          "sha256": "5ee9bf07208168e78317bdabd3924166f1517b6f91033e824696886b7f7f68e8"
+        },
+        {
+          "bytes": 94371800,
+          "ms": 1267.8999999999942,
+          "sha256": "b5f8f05cfdae94ce6961db43a86088d8ab16b2bd844b1e751b82bcca38ed9d86"
+        }
+      ]
+    }
+  ]
+}

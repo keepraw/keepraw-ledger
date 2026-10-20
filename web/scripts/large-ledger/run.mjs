@@ -28,9 +28,10 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const log = value => process.stdout.write(`${new Date().toISOString()} ${value}\n`)
 const result = { metadata: { date: new Date().toISOString(), mode, seed: SEED, source: web,
   commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: web, encoding: 'utf8' }).trim(),
-  reusedProfileRoot: process.env.LEDGER_PROFILE_ROOT ?? null, node: process.version, cpu: os.cpus()[0].model, cpus: os.cpus().length, memoryBytes: os.totalmem(), temporary }, cases: [] }
+  reusedProfileRoot: process.env.LEDGER_PROFILE_ROOT ?? null, node: process.version, cpu: os.cpus()[0].model, cpus: os.cpus().length, memoryBytes: os.totalmem(), os: { platform: os.platform(), release: os.release(), arch: os.arch() },
+  sampleCounts: { imports: 3, operations: 5, edits: 5, ui: 5, startup: 3, actualBackup: 3 }, temporary }, cases: [] }
 result.metadata.sourceFiles = {}
-for (const name of ['app/AppStore.tsx', 'db/db.ts', 'db/repository.ts', 'backup/json.ts', 'backup/archive.ts', 'backup/zipSafety.ts', 'ui/pages/TransactionsPage.tsx']) {
+for (const name of ['app/AppStore.tsx', 'db/db.ts', 'db/repository.ts', 'backup/json.ts', 'backup/archive.ts', 'backup/zipSafety.ts', 'ui/pages/TransactionsPage.tsx', 'core/analytics.ts']) {
   const file = path.join(web, 'src', name)
   if (await stat(file).catch(() => null)) result.metadata.sourceFiles[name] = hash(await readFile(file))
 }
@@ -42,6 +43,7 @@ async function launch(name, databaseOnly = false) {
   const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium',
     headless: true, locale: 'zh-CN', timezoneId: 'UTC', acceptDownloads: true,
     viewport: { width: 1440, height: 1000 }, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+  result.metadata.browser ??= context.browser().version()
   contexts.add(context); context.on('close', () => contexts.delete(context))
   await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort())
   const page = context.pages()[0]; page.setDefaultTimeout(180000)
@@ -273,11 +275,26 @@ async function uiSamples(page) {
   return samples
 }
 async function performanceCase(count) {
-  const name = `python-${count}.xlsx`; assets.set(name, makeWorkbook(makeRows(count)))
-  const entry = { count, imports: [], samples: [], startup: [], edits: [], ui: [] }
+  // Respect the production 25 MiB/file limit without reducing ledger size.
+  const rows = makeRows(count), fixtures = []
+  for (let offset = 0; offset < count; offset += 50000) {
+    const name = `python-${count}-${offset}.xlsx`, bytes = makeWorkbook(rows.slice(offset, offset + 50000))
+    assert.ok(bytes.length <= 25 * 1024 * 1024, 'synthetic workbook exceeds production file budget')
+    assets.set(name, bytes); fixtures.push({ name, rows: Math.min(50000, count - offset), bytes: bytes.length })
+  }
+  const entry = { count, fixtures, imports: [], samples: [], startup: [], edits: [], ui: [] }
   for (let repeat = 0; repeat < 3; repeat++) {
     log(`PERFORMANCE ${count} ${repeat}`); const target = await launch(`performance-${count}-${repeat}`)
-    entry.imports.push(await call(target.page, 'normalImport', name)); entry.usage ??= await call(target.page, 'usage')
+    const parts = []
+    for (const fixture of fixtures) {
+      const imported = await call(target.page, 'normalImport', fixture.name)
+      assert.equal(imported.valid, fixture.rows)
+      parts.push(imported)
+    }
+    assert.equal((await call(target.page, 'counts')).transactions, count)
+    entry.imports.push({ parts, previewMs: parts.reduce((sum, part) => sum + part.previewMs, 0),
+      confirmMs: parts.reduce((sum, part) => sum + part.confirmMs, 0), totalMs: parts.reduce((sum, part) => sum + part.totalMs, 0) })
+    entry.usage ??= await call(target.page, 'usage')
     if (repeat === 0) {
       entry.samples = await call(target.page, 'performanceSamples', 5); entry.edits = await call(target.page, 'editSamples', 5); entry.ui = await uiSamples(target.page)
       entry.actualBackup = []; for (let i = 0; i < 3; i++) entry.actualBackup.push(await exported(target.page, 'json', `${count}-performance.json`))
@@ -293,6 +310,7 @@ async function performanceCase(count) {
     await target.context.close()
   }
   result.cases.push(entry); await save()
+  for (const fixture of fixtures) assets.delete(fixture.name)
 }
 try {
   await writeFile(generatedProbe, await readFile(path.join(directory, 'browser.tsx'), 'utf8'))

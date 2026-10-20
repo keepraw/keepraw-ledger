@@ -13,10 +13,35 @@ const PAGE_SIZE = 50
 const collator = new Intl.Collator()
 const compareDates = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0
 
+/** Sort repeated text groups once, then apply the historical date tie within each. */
+function sortRepeatedText(transactions: Transaction[], key: 'description' | 'type', direction: number): Transaction[] | undefined {
+  if (transactions.length < 256) return undefined
+  const values = new Set(transactions.map(tx => tx[key]))
+  // Mostly unique text cannot amortize a second sort. Keep its direct comparator.
+  if (values.size > transactions.length / 4) return undefined
+  const ordered = [...values].sort((left, right) => {
+    if (left === null || right === null) return left === right ? 0 : left === null ? 1 : -1
+    return collator.compare(left, right) * direction
+  })
+  for (let index = 1; index < ordered.length; index++) {
+    const left = ordered[index - 1]!, right = ordered[index]!
+    // Different strings may collate equally (e.g. composed/decomposed accents).
+    // Their historical comparator has no date tie: retain its stable interleaving.
+    if (left !== null && right !== null && collator.compare(left, right) === 0) return undefined
+  }
+  const groups = new Map(ordered.map(value => [value, [] as Transaction[]]))
+  for (const tx of transactions) groups.get(tx[key])!.push(tx)
+  return ordered.flatMap(value => groups.get(value)!.sort((a, b) => compareDates(a.transactionDate ?? '', b.transactionDate ?? '')))
+}
+
 /** Same null placement, date tie-break and stable order as the historical list. */
 export function sortTransactions(transactions: Transaction[], sortKey: SortKey, sortDir: SortDir): Transaction[] {
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
+  if (sortKey === 'description' || sortKey === 'type') {
+    const repeated = sortRepeatedText(transactions, sortKey, direction)
+    if (repeated) return repeated
+  }
   return [...transactions].sort((a, b) => {
     const left = a[sortKey], right = b[sortKey]
     if (left === null || right === null) {

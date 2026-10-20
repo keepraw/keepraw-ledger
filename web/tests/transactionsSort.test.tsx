@@ -53,3 +53,34 @@ describe('AUD-007 amount ordering', () => {
     expect(ids()).toHaveLength(50)
   })
 })
+
+
+it('composes date, bank, card, type, review and all text search fields before pagination', () => {
+  const selected = Array.from({ length: 55 }, (_, index) => row(`selected-${index}`, index, {
+    bank: 'boc', cardLast4: '1234', type: 'purchase', description: `Coffee ${index}`,
+    merchant: '独立商户', transactionDate: '2025-02-10', reviewStatus: 'confirmed',
+  }))
+  app.visibleTransactions = [...selected,
+    row('bank-excluded', 1, { bank: 'icbc', cardLast4: '1234', transactionDate: '2025-02-10' }),
+    row('card-excluded', 1, { bank: 'boc', cardLast4: '9999', transactionDate: '2025-02-10' }),
+    row('date-excluded', 1, { bank: 'boc', cardLast4: '1234', transactionDate: '2025-03-01' }),
+    row('type-excluded', 1, { bank: 'boc', cardLast4: '1234', transactionDate: '2025-02-10', type: 'refund' }),
+    { ...selected[0]!, id: 'rejected', reviewStatus: 'rejected', description: 'rejected' },
+  ]
+  const { container } = render(<TransactionsPage />)
+  fireEvent.change(screen.getByDisplayValue('全部银行'), { target: { value: 'boc' } })
+  fireEvent.change(screen.getByDisplayValue('全部卡片'), { target: { value: '1234' } })
+  fireEvent.change(screen.getByDisplayValue('全部类型'), { target: { value: 'purchase' } })
+  const dates = container.querySelectorAll('input[type="date"]')
+  fireEvent.change(dates[0]!, { target: { value: '2025-02-01' } })
+  fireEvent.change(dates[1]!, { target: { value: '2025-02-28' } })
+  for (const text of ['  COFFEE  ', '独立商户', '1234', '中国银行']) {
+    fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: text } })
+    expect(ids()).toHaveLength(50)
+    expect(screen.getByText(/第 1 \/ 2 页 · 共 55 笔/)).toBeInTheDocument()
+  }
+  fireEvent.click(screen.getByText('下一页'))
+  expect(ids()).toHaveLength(5)
+  fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: '  coffee 54  ' } })
+  expect(ids()).toEqual(['Coffee 54'])
+})

@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-20",
+  "sourceCommit": "2d71c85ef60c69ae2fab48e053e8fe6d9b02624a",
+  "runtime": {
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "benchmarkChromium": "154.0.8037.57",
+    "e2eChromium": "156.0.8078.4"
+  },
+  "checks": [
+    {
+      "name": "ci",
+      "command": "npm ci --cache /workspace/.npm-cache",
+      "exitCode": 0,
+      "note": "Initial default-home-cache attempt failed; workspace-cache retry installed 331 locked packages."
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "seconds": 3.091
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "exitCode": 0,
+      "seconds": 2.108
+    },
+    {
+      "name": "test",
+      "command": "npm test",
+      "exitCode": 0,
+      "seconds": 13.827
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "exitCode": 0,
+      "seconds": 5.756
+    },
+    {
+      "name": "audit",
+      "command": "npm audit --audit-level=high",
+      "exitCode": 0,
+      "seconds": 0.45
+    },
+    {
+      "name": "e2e",
+      "command": "PLAYWRIGHT_BROWSERS_PATH=/workspace/keepraw-ledger/work/aud002/playwright npm run test:e2e",
+      "exitCode": 0,
+      "passed": 45,
+      "skipped": 2,
+      "seconds": 54.5
+    }
+  ],
+  "unitResults": {
+    "passed": 845,
+    "skipped": 6,
+    "filesPassed": 53,
+    "filesSkipped": 1
+  },
+  "lintWarnings": {
+    "count": 2,
+    "newWarnings": 0
+  },
+  "auditVulnerabilities": 0,
+  "skips": "Existing opt-in private-statement unit and browser fixtures; no new skips.",
+  "preFixRegression": {
+    "productionCommit": "2c6d42c45ceb2da3866af9cffe6bae1fc529cc41",
+    "command": "npx vitest run tests/transactionsPerformance.test.tsx tests/transactionsSort.test.tsx",
+    "failed": 1,
+    "passed": 7,
+    "collationCalls": 91376,
+    "requiredFewerThan": 512
+  },
+  "postFixTargetedRegression": {
+    "filesPassed": 3,
+    "passed": 19,
+    "failed": 0,
+    "collationCallBudgetPassed": true
+  },
+  "performanceBudgets": {
+    "command": "node scripts/large-ledger/compare-performance.mjs BEFORE.json AFTER.json",
+    "exitCode": 1,
+    "passed": 25,
+    "missed": 1,
+    "miss": "18k refreshPaintMs median 184.5 > 180 ms"
+  },
+  "performanceCampaigns": {
+    "beforeCommit": "2c6d42c45ceb2da3866af9cffe6bae1fc529cc41",
+    "afterCommit": "2d71c85ef60c69ae2fab48e053e8fe6d9b02624a",
+    "sizes": [
+      18000,
+      100000
+    ],
+    "complete": true,
+    "seed": 1263684657
+  }
+}
