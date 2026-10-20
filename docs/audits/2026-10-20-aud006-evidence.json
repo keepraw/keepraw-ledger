@@ -1,0 +1,162 @@
+{
+  "audit": "AUD-006",
+  "date": "2026-10-20",
+  "timezone": "Asia/Shanghai",
+  "baseMain": "977646c3515e7c9d70616def2e3d6a0cdc8b4774",
+  "branch": "fix/aud006-demo-transaction-state",
+  "mainChecks": {
+    "validationRun": 39399900849,
+    "web": "success",
+    "deploy": "success",
+    "pagesDeployment": 7196133107,
+    "commitIdentityRun": 39399900945,
+    "verifyCommitMetadata": "success"
+  },
+  "before": {
+    "unit": {
+      "command": "npm test -- --run tests/demoTransactions.test.tsx",
+      "failed": 5,
+      "passed": 0,
+      "scope": "First five cases, before production changes"
+    },
+    "chromium": {
+      "command": "npx playwright test e2e/demoTransactions.spec.ts",
+      "failed": 2,
+      "passed": 0,
+      "observation": "Confirm leaves the exact review row present: expected count 0, received 1, timeout 15000 ms"
+    },
+    "syntheticIdCollision": {
+      "observation": "Old queued Demo patch reaches a deliberately same-id real IndexedDB row, changing category/flags and ledger revision",
+      "naturalUserCollisionObserved": false
+    },
+    "navigation": {
+      "command": "E2E_PORT=5201 npx playwright test e2e/demoTransactions.spec.ts --grep \"demo confirmation\"",
+      "failed": 1,
+      "observation": "Before AppShell correction, Demo navigation expected 人工复核1 but received 人工复核",
+      "stage": "After core transaction fix, before visibleStatements navigation fix"
+    }
+  },
+  "finalCommands": [
+    {
+      "step": "install",
+      "command": [
+        "npm",
+        "ci",
+        "--cache",
+        "/workspace/.npm-cache"
+      ],
+      "exitCode": 0,
+      "seconds": 3.23
+    },
+    {
+      "step": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "seconds": 4.53
+    },
+    {
+      "step": "lint",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "exitCode": 0,
+      "seconds": 3.01
+    },
+    {
+      "step": "unit",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exitCode": 0,
+      "seconds": 22.93
+    },
+    {
+      "step": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "seconds": 7.6
+    },
+    {
+      "step": "audit",
+      "command": [
+        "npm",
+        "audit",
+        "--audit-level=high"
+      ],
+      "exitCode": 0,
+      "seconds": 0.43
+    },
+    {
+      "step": "e2e",
+      "command": [
+        "npm",
+        "run",
+        "test:e2e"
+      ],
+      "exitCode": 0,
+      "seconds": 78.0
+    }
+  ],
+  "totals": {
+    "unit": {
+      "passed": 851,
+      "skipped": 6,
+      "passedFiles": 54,
+      "skippedFiles": 1
+    },
+    "chromium": {
+      "passed": 47,
+      "skipped": 2
+    },
+    "audit": {
+      "reportedVulnerabilities": 0
+    },
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 2
+    }
+  },
+  "environment": {
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "vitest": "4.1.11",
+    "playwright": "1.64.0",
+    "chromium": "156.0.8078.4",
+    "platform": "Linux x64"
+  },
+  "sourceSha256": {
+    "web/src/app/AppStore.tsx": "0499c726dcdff64f0310c201072fd3fa7be5070609698a18d3fb1704b5d06b86",
+    "web/src/demo/demoStore.ts": "f3597aa8ef09bd4bdd795cb476774b52aa20ea87adf2e07741347966a3a9a9bb",
+    "web/src/ui/AppShell.tsx": "4845ffd494c367ddc331a3edb3fa2cf5424895424829392cdf9b2285fcaf3936",
+    "web/src/ui/pages/ReviewPage.tsx": "ecaf5e6b1568fd608e794ed595dc379d516ae16f3d3bba092e750bd6bdbe2289",
+    "web/src/ui/pages/SettingsPage.tsx": "b2ef3361b63181319736e57840b60de54a4e9da7240a01cf5424ed266eb1f286",
+    "web/tests/demoTransactions.test.tsx": "2429e581600ad2f1b9406ee5f77c5b4a401f83efde5f751595eb56d8eedf0652",
+    "web/e2e/demoTransactions.spec.ts": "cddea3b4340a1e508f7a75e814f898475526bdd7aa97b9a0a556a309a8b8a5ce"
+  },
+  "scope": {
+    "cspStarted": false,
+    "goldenChanged": false,
+    "dependenciesChanged": false,
+    "repositoryPersistenceChanged": false,
+    "merged": false
+  },
+  "specialist": {
+    "command": "npx vitest run tests/demoTransactions.test.tsx tests/ledgerState.test.tsx tests/demoIsolation.test.ts tests/demoModeFlow.test.tsx tests/demoResidueCleanup.test.ts tests/backupV2.test.ts tests/backupSafety.test.ts tests/statementState.test.ts tests/concurrentImports.test.tsx tests/attachmentBudget.test.tsx tests/largeBackupSafety.test.ts",
+    "exitCode": 0,
+    "passed": 117,
+    "passedFiles": 11,
+    "seconds": 5.7
+  },
+  "diffCheck": "passed"
+}
