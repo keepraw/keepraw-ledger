@@ -18,6 +18,11 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
   return [...transactions].sort((a, b) => {
+    const left = a[sortKey], right = b[sortKey]
+    if (left === null || right === null) {
+      if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
+      return left === null ? 1 : -1
+    }
     // Currency groups stay in code order; only amounts within a group change direction.
     if (sortKey === 'settlementAmountMinor') {
       const currencyOrder = compareDates(a.settlementCurrency, b.settlementCurrency)
@@ -25,10 +30,7 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
       const amountOrder = a.settlementAmountMinor < b.settlementAmountMinor ? -1 : a.settlementAmountMinor > b.settlementAmountMinor ? 1 : 0
       return amountOrder ? amountOrder * direction : compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
     }
-    const left = a[sortKey], right = b[sortKey]
     if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
-    if (left === null) return 1
-    if (right === null) return -1
     return (dateKey ? compareDates(String(left), String(right)) : collator.compare(String(left), String(right))) * direction
   })
 }

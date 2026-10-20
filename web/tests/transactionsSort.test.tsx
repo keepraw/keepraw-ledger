@@ -23,6 +23,14 @@ describe('AUD-007 amount ordering', () => {
     expect(ids()).toEqual(['max', '100', '30', '2a', '2b', 'zero', '-2', '-100', 'min'])
   })
 
+  it('retains historical null-last placement and date ties for missing amounts in both directions', () => {
+    const missing = null as unknown as number
+    const rows = [row('missing-late', missing, { transactionDate: '2025-01-03' }), row('positive', 200),
+      row('missing-early', missing, { transactionDate: '2025-01-02' }), row('negative', -200)]
+    expect(sortTransactions(rows, 'settlementAmountMinor', 'asc').map(tx => tx.id)).toEqual(['negative', 'positive', 'missing-early', 'missing-late'])
+    expect(sortTransactions(rows, 'settlementAmountMinor', 'desc').map(tx => tx.id)).toEqual(['positive', 'negative', 'missing-early', 'missing-late'])
+  })
+
   it('keeps currency groups in code order in both directions, with historical date ties', () => {
     const rows = [row('usd-low', 1, { settlementCurrency: 'USD' }), row('cny-new', 100, { transactionDate: '2025-01-02' }),
       row('hkd', 100000, { settlementCurrency: 'HKD' }), row('cny-old', 100), row('usd-high', 2, { settlementCurrency: 'USD' })]
