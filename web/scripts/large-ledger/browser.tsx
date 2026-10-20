@@ -141,11 +141,14 @@ async function performanceSamples(repeats: number) {
     start = now(); if (productionSort) productionSort(snapshot.transactions, 'description', 'asc')
     else [...snapshot.transactions].sort((a, b) => a.description === b.description ? (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '') : String(a.description).localeCompare(String(b.description)))
     const descriptionSortMs = now() - start
+    start = now(); const searched = snapshot.transactions.filter(tx =>
+      tx.description.toLowerCase().includes('咖啡') || tx.merchant.toLowerCase().includes('咖啡') || tx.cardLast4.includes('咖啡') || bankName(tx.bank).includes('咖啡'))
+    const searchAllMs = now() - start
     start = now(); const payload = await repository.exportDataBackup(); const backupReadMs = now() - start
     start = now(); const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }); const backupEncodeBlobMs = now() - start
     const refreshStart = now(); await api.refresh(); const refreshResolvedMs = now() - refreshStart
     await paint(); const refreshPaintMs = now() - refreshStart
-    samples.push({ readMs, filterAllMs, dateSortMs, filteredSearchMs, descriptionSortMs, filteredRecords: selected.length,
+    samples.push({ readMs, filterAllMs, dateSortMs, filteredSearchMs, descriptionSortMs, records: snapshot.transactions.length, searchAllMs, searchedRecords: searched.length, filteredRecords: selected.length,
       backupReadMs, backupEncodeBlobMs, backupTotalMs: backupReadMs + backupEncodeBlobMs, backupBytes: blob.size,
       refreshResolvedMs, refreshCommitMs: commitAt - refreshStart, refreshPaintMs })
   }
