@@ -157,6 +157,7 @@ export function locateTxnTable(doc: SourceDocument): CiticTxnTable | null {
 }
 
 function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSummary {
+  // Balances carry explicit debt/credit signs; spending and payment totals remain magnitudes.
   const summary = emptySummary()
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
@@ -197,7 +198,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
       const amounts = rowAmounts(flatRows[i]!.row)
       if (amounts.length < 4) continue
       if (summary.previousBalanceMinor === null) {
-        summary.previousBalanceMinor = Math.abs(amounts[0]!)
+        summary.previousBalanceMinor = amounts[0]!
         components.push({ label: '上期应还款额 Previous Balance', minor: summary.previousBalanceMinor, currency: 'CNY' })
       }
       if (summary.newCreditMinor === null) {
@@ -209,7 +210,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
         components.push({ label: '本期新增金额 New Charge', minor: summary.newDebitMinor, currency: 'CNY' })
       }
       if (summary.currentBalanceMinor === null) {
-        summary.currentBalanceMinor = amounts[3]! < 0 ? amounts[3]! : Math.abs(amounts[3]!)
+        summary.currentBalanceMinor = amounts[3]!
         components.push({ label: '账户账单金额 Acct. Statement Balance', minor: summary.currentBalanceMinor, currency: 'CNY' })
       }
       if (amounts.length >= 5 && summary.minimumPaymentMinor === null) {
