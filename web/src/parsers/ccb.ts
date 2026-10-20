@@ -148,6 +148,7 @@ export function locateTxnTable(doc: SourceDocument): CcbTxnTable | null {
 }
 
 function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSummary {
+  // Balances carry explicit debt/credit signs; spending and payment totals remain magnitudes.
   const summary = emptySummary()
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
@@ -168,7 +169,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
       const credit = parseAmountToMinor(row[3] ?? '')
       const current = parseAmountToMinor(row[4] ?? '')
       if (prev && summary.previousBalanceMinor === null) {
-        summary.previousBalanceMinor = Math.abs(prev.minor)
+        summary.previousBalanceMinor = prev.minor
         components.push({ label: '上期全部应还款额 Last Statement Balance', minor: summary.previousBalanceMinor, currency: 'CNY' })
       }
       if (debit && summary.newDebitMinor === null) {
@@ -180,7 +181,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
         components.push({ label: '还款/退货/费用返还 Payment/Credit', minor: summary.newCreditMinor, currency: 'CNY' })
       }
       if (current && summary.currentBalanceMinor === null) {
-        summary.currentBalanceMinor = current.negativeByFormat ? -Math.abs(current.minor) : Math.abs(current.minor)
+        summary.currentBalanceMinor = current.minor
         components.push({ label: '本期全部应还款额 New Balance', minor: summary.currentBalanceMinor, currency: 'CNY' })
       }
       break
@@ -220,7 +221,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
     if (!valueRow || !/人民币|CNY/.test(valueRow[0] ?? '')) continue
     if (balanceIndex !== -1 && summary.currentBalanceMinor === null) {
       const parsed = parseAmountToMinor(valueRow[balanceIndex] ?? '')
-      if (parsed) summary.currentBalanceMinor = Math.abs(parsed.minor)
+      if (parsed) summary.currentBalanceMinor = parsed.minor
     }
     if (minimumIndex !== -1 && summary.minimumPaymentMinor === null) {
       const parsed = parseAmountToMinor(valueRow[minimumIndex] ?? '')

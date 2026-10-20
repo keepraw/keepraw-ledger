@@ -149,6 +149,7 @@ export function locateTxnTable(doc: SourceDocument): IcbcTxnTable | null {
 }
 
 function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSummary {
+  // Balances carry explicit debt/credit signs; spending and payment totals remain magnitudes.
   const summary = emptySummary()
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
@@ -173,7 +174,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
       if (currentIndex !== -1 && summary.currentBalanceMinor === null) {
         const parsed = parseAmountToMinor(row[currentIndex] ?? '')
         if (parsed) {
-          summary.currentBalanceMinor = Math.abs(parsed.minor)
+          summary.currentBalanceMinor = parsed.minor
           components.push({ label: '应还款额', minor: summary.currentBalanceMinor, currency: 'CNY' })
         }
       }
@@ -214,7 +215,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
       const parsedBalance = balanceIndex !== -1 ? parseAmountToMinor(row[balanceIndex] ?? '') : null
       if (!parsedPrev && !parsedIncome && !parsedOutgo && !parsedBalance) continue
       if (parsedPrev && summary.previousBalanceMinor === null) {
-        summary.previousBalanceMinor = Math.abs(parsedPrev.minor)
+        summary.previousBalanceMinor = parsedPrev.minor
         components.push({ label: '上期余额', minor: summary.previousBalanceMinor, currency: 'CNY' })
       }
       if (parsedIncome && summary.newCreditMinor === null) {
@@ -226,7 +227,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
         components.push({ label: '本期支出', minor: summary.newDebitMinor, currency: 'CNY' })
       }
       if (parsedBalance) {
-        const balance = Math.abs(parsedBalance.minor)
+        const balance = parsedBalance.minor
         if (summary.currentBalanceMinor === null) {
           summary.currentBalanceMinor = balance
           components.push({ label: '本期余额', minor: balance, currency: 'CNY' })
