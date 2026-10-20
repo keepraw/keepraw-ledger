@@ -74,3 +74,15 @@ export const SYNTHETIC_ABC = {
   installmentPaymentMinor: 30000,
   totalDebitRowsMinor: 740000,
 }
+
+/** Synthetic year-boundary statement in the same six-column ABC layout. */
+export const CROSS_YEAR_ABC_HTML = `<html><body>
+<table>${rows(['中国农业银行金穗信用卡', '622800******9876'])}</table>
+<table>${rows(['账单周期 Statement Cycle', '2025/12/15-2026/01/14'])}</table>
+<table>${rows(['本期应还金额', '上期账单 应还金额', '本期账单金额', '本期还款'])}</table>
+<table>${rows(['300.00', '0.00', '300.00', '0.00'])}</table>
+<table>${rows(['交易日期', '入账日期', '卡号', '交易描述', '交易金额', '入账金额'])}
+${rows(['● 消费'])}
+${rows(['12/20', '1221', '9876', '网上消费 December', '100.00/CNY', '-100.00/CNY'])}
+${rows(['0105', '01/06', '9876', '网上消费 January', '200.00/CNY', '-200.00/CNY'])}
+</table></body></html>`

@@ -1,4 +1,4 @@
-import { parseDateInput, type IsoDate } from '../core/dates'
+import { addDays, isIsoDate, parseDateInput, type IsoDate } from '../core/dates'
 import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
@@ -274,49 +274,24 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
  * ABC prints compact dates without separators: 4-digit `MMDD` in some
  * statements, 6-digit `YYMMDD` in others.
  */
-export function resolveAbcDate(raw: string, cycle: Cycle): IsoDate | null {
+export function resolveAbcDate(raw: string, cycle: Cycle, posting = false): IsoDate | null {
   const text = raw.trim()
-  if (!text) return null
-  const iso = parseDateInput(text)
-  if (iso) return iso
+  const explicit = parseDateInput(text)
+  if (explicit) return explicit
   const yymmdd = /^(\d{2})(\d{2})(\d{2})$/.exec(text)
-  if (yymmdd) {
-    const year = 2000 + Number(yymmdd[1])
-    const candidate = parseDateInput(`${year}-${yymmdd[2]}-${yymmdd[3]}`)
-    if (candidate) {
-      if (cycle.start && cycle.end) {
-        if (candidate >= cycle.start && candidate <= cycle.end) return candidate
-        // Posting dates may land just outside the cycle; still accept a valid date.
-        return candidate
-      }
-      return candidate
-    }
+  if (yymmdd) return parseDateInput(`20${yymmdd[1]}-${yymmdd[2]}-${yymmdd[3]}`)
+
+  const short = /^(\d{2})(\d{2})$/.exec(text) ?? /^(\d{1,2})[/.](\d{1,2})$/.exec(text)
+  if (!short || !cycle.start || !cycle.end || !isIsoDate(cycle.start) || !isIsoDate(cycle.end) || cycle.start > cycle.end) return null
+  // Resolve all plausible years, including a posting just after a December close.
+  // A bounded seven-day posting window is evidence; nearest-date guessing is not.
+  const end = posting ? addDays(cycle.end, 7) : cycle.end
+  const candidates: IsoDate[] = []
+  for (let year = Number(cycle.start.slice(0, 4)); year <= Number(end.slice(0, 4)); year++) {
+    const candidate = parseDateInput(`${short[1]}/${short[2]}`, year)
+    if (candidate && candidate >= cycle.start && candidate <= end) candidates.push(candidate)
   }
-  const compact = /^(\d{2})(\d{2})$/.exec(text)
-  if (compact) {
-    const month = Number(compact[1])
-    const day = Number(compact[2])
-    const candidates: string[] = []
-    for (const year of [cycle.start?.slice(0, 4), cycle.end?.slice(0, 4)]) {
-      if (!year) continue
-      const candidate = parseDateInput(`${year}-${month}-${day}`)
-      if (candidate) candidates.push(candidate)
-    }
-    for (const candidate of candidates) {
-      if (cycle.start && cycle.end && candidate >= cycle.start && candidate <= cycle.end) return candidate
-    }
-    if (cycle.end) {
-      const fallback = parseDateInput(`${cycle.end.slice(0, 4)}-${month}-${day}`)
-      if (fallback) return fallback
-    }
-    return candidates[0] ?? null
-  }
-  const slash = /^(\d{1,2})[/.](\d{1,2})$/.exec(text)
-  if (slash && cycle.end) {
-    const year = cycle.end.slice(0, 4)
-    return parseDateInput(`${year}-${slash[1]}-${slash[2]}`)
-  }
-  return null
+  return candidates.length === 1 ? candidates[0]! : null
 }
 
 export function cleanDescription(text: string): string {
@@ -379,8 +354,9 @@ function parseRow(
   sourceRow: number,
 ): ParsedTransaction | null {
   const transactionDate = resolveAbcDate(cells[0] ?? '', cycle)
-  const postingDate = resolveAbcDate(cells[1] ?? '', cycle) ?? transactionDate
-  if (!transactionDate) return null
+  const postingText = (cells[1] ?? '').trim()
+  const postingDate = !postingText || /^[-—]+$/.test(postingText) ? transactionDate : resolveAbcDate(postingText, cycle, true)
+  if (!transactionDate || !postingDate) return null
   const cardCell = (cells[2] ?? '').trim()
   const cardLast4 = /^\d{4}$/.test(cardCell) ? cardCell : fallbackCardLast4
   if (!cardLast4) return null
