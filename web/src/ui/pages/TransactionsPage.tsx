@@ -18,11 +18,17 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
   return [...transactions].sort((a, b) => {
+    // Currency groups stay in code order; only amounts within a group change direction.
+    if (sortKey === 'settlementAmountMinor') {
+      const currencyOrder = compareDates(a.settlementCurrency, b.settlementCurrency)
+      if (currencyOrder) return currencyOrder
+      const amountOrder = a.settlementAmountMinor < b.settlementAmountMinor ? -1 : a.settlementAmountMinor > b.settlementAmountMinor ? 1 : 0
+      return amountOrder ? amountOrder * direction : compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
+    }
     const left = a[sortKey], right = b[sortKey]
     if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
     if (left === null) return 1
     if (right === null) return -1
-    // Amount ordering deliberately retains the existing string comparison.
     return (dateKey ? compareDates(String(left), String(right)) : collator.compare(String(left), String(right))) * direction
   })
 }
@@ -244,7 +250,7 @@ export function TransactionsPage() {
       </div>
 
       <p className="subtle">
-        金额符号约定：支出为正，存入 / 还款 / 退款为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
+        金额排序：按结算币种代码固定分组，组内按金额数值升降序，不进行汇率换算。金额符号约定：支出为正，存入 / 还款 / 退款为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
       </p>
     </>
   )
