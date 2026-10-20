@@ -128,6 +128,7 @@ export function SettingsPage() {
               演示数据共 {demoCounts.statements} 份账单、{demoCounts.transactions} 笔交易，全部为虚构内容，卡尾号为 0000 / 9999。
               真实数据 {realCounts.statements} 份账单、{realCounts.transactions} 笔交易，演示模式开启时不会显示。
             </p>
+            <p className="subtle">演示交易修改与备注仅在本次页面会话中保留，切换模式不会清除；重新生成、刷新或重新打开应用后，演示交易恢复初始状态，演示备注清空。真实账本与备份不受影响。</p>
             <button className="btn" type="button" onClick={() => void loadDemoData()}>
               重新生成演示数据
             </button>

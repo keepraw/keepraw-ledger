@@ -22,7 +22,7 @@ const NAV: Array<{ page: Page; label: string }> = [
 
 export function AppShell() {
   const [page, navigate] = useHashPage()
-  const { state } = useApp()
+  const { state, visibleStatements } = useApp()
 
   useEffect(() => {
     document.title = `${pageTitle(page)} · Keepraw-Ledger`
@@ -40,7 +40,7 @@ export function AppShell() {
     return () => media.removeEventListener('change', apply)
   }, [state.settings.theme])
 
-  const pending = state.statements.filter((s) => !s.isDemo && s.status !== 'reconciled' && s.status !== 'imported').length
+  const pending = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
 
   return (
     <div className="app">

@@ -75,7 +75,7 @@ export function ReviewPage() {
       <div className="page-head">
         <div>
           <h1>人工复核</h1>
-          <p>对账差额、疑似重复和未完成分类的交易都会集中在这里，复核状态会持久保存在本机。</p>
+          <p>{state.demoMode ? '演示交易的修改与备注仅在本次会话内保留，重新生成或刷新后重置。' : '对账差额、疑似重复和未完成分类的交易都会集中在这里，复核状态会持久保存在本机。'}</p>
         </div>
         <div className="segmented">
           <button type="button" aria-pressed={tab === 'statements'} onClick={() => setTab('statements')}>
@@ -293,7 +293,7 @@ export function ReviewPage() {
           <DemoBadge />
           <div>
             <strong>演示备注与真实备注隔离</strong>
-            <p>演示备注仅保存在当前页面会话的内存中，刷新后消失，不写入真实账本或备份。</p>
+            <p>演示交易修改与备注仅保存在当前页面会话的内存中；切换模式后保留，重新生成、刷新或重新打开应用后清除，不写入真实账本或备份。</p>
           </div>
         </div>
       ) : null}

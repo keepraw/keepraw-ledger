@@ -9,7 +9,6 @@ import {
   mimeTypeForFile,
   persistImportResults,
   persistLegacyImport,
-  purgeDemoRows,
   ensureDemoRowsPurged,
   readSnapshot,
   readImportSnapshot,
@@ -23,7 +22,7 @@ import {
   type ArchiveStatus,
   type Snapshot,
 } from '../db/repository'
-import { getDemoSnapshot } from '../demo/demoStore'
+import { createDemoSnapshot, patchDemoSnapshot } from '../demo/demoStore'
 import { buildFullBackupZip, restoreFullBackupZip } from '../backup/archive'
 import {
   hashLegacyFile,
@@ -115,6 +114,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [demoNotes, setDemoNotes] = useState<Record<string, string>>({})
+  const [demoSnapshot, setDemoSnapshot] = useState<Snapshot>(createDemoSnapshot)
+  // The queue must see earlier Demo edits even before React commits a render.
+  const demoCurrent = useRef(demoSnapshot)
+  const demoGeneration = useRef(0)
   const [ready, setReady] = useState(false)
   const [progress, setProgress] = useState<ImportProgress | null>(null)
   const initialised = useRef(false)
@@ -302,13 +305,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const loadDemoData = useCallback(() => enqueue(async () => {
-    // Demo data lives in memory only: drop any legacy fictional rows, warm
-    // the cache and reload the real snapshot. Nothing demo is ever written
-    // to the production tables.
-    await purgeDemoRows()
-    getDemoSnapshot()
-    await reload()
-  }), [enqueue, reload])
+    // Reset edits and notes together. Legacy cleanup belongs to startup, not
+    // this memory-only action. Do not touch real rows, notes or evidence here.
+    demoCurrent.current = createDemoSnapshot()
+    demoGeneration.current++
+    setDemoSnapshot(demoCurrent.current)
+    setDemoNotes({})
+  }), [enqueue])
 
   /**
    * Legacy history import, kept strictly separate from bank-statement imports.
@@ -372,7 +375,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const patchTransaction = useCallback((patch: Partial<Transaction> & { id: string }) => {
     // Own caller-provided arrays before the operation waits in the queue.
     const ownedPatch = structuredClone(patch)
+    const demoRequest = settings.demoMode
+    const generation = demoGeneration.current
     return enqueue(async () => {
+      if (demoRequest) {
+        if (generation !== demoGeneration.current) throw new Error('演示数据已重新生成，请重新操作。')
+        demoCurrent.current = patchDemoSnapshot(demoCurrent.current, ownedPatch)
+        setDemoSnapshot(demoCurrent.current)
+        return
+      }
+      if ((await loadSettings()).demoMode) throw new Error('演示模式已开启，请切回真实模式后重新修改交易。')
       const committed = await persistTransactionPatch(ownedPatch)
       if (!committed) return
       setSnapshot(current => ({ ...current,
@@ -380,7 +392,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         statements: mergeStatementStates(current.statements, committed.statements),
       }))
     })
-  }, [enqueue])
+  }, [enqueue, settings.demoMode])
 
   const recomputeStatement = useCallback((statementId: string) => enqueue(async () => {
     if ((await loadSettings()).demoMode) throw new Error('请先关闭演示模式，再重新核对真实账单。')
@@ -392,9 +404,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Capture the caller's ownership before queueing. A later mode switch must
     // never turn an in-memory demo write into a real database write.
     const demoRequest = settings.demoMode
+    const generation = demoGeneration.current
     return enqueue(async () => {
       if (demoRequest) {
-        if (!getDemoSnapshot().transactions.some(row => row.id === transactionId)) throw new Error('演示模式只能记录演示交易的备注。')
+        if (generation !== demoGeneration.current) throw new Error('演示数据已重新生成，请重新保存备注。')
+        if (!demoCurrent.current.transactions.some(row => row.id === transactionId)) throw new Error('演示模式只能记录演示交易的备注。')
         if (note.trim().length > MAX_NOTE_CHARS) throw new Error('备注过长。')
         setDemoNotes(current => {
           const next = { ...current }
@@ -475,7 +489,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // come from an in-memory snapshot while `snapshot` always holds the real
   // IndexedDB content. Production pages keep filtering `!isDemo` so stray
   // legacy rows can never leak in before the next purge.
-  const demoSnapshot = useMemo(() => (settings.demoMode ? getDemoSnapshot() : EMPTY), [settings.demoMode])
 
   const visibleStatements = useMemo(
     () => (settings.demoMode ? demoSnapshot.statements : snapshot.statements.filter((row) => !row.isDemo)),
