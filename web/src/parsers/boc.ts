@@ -53,9 +53,11 @@ export const bocParser: BankParser = {
   parse(doc) {
     if (!doc.pdf) throw new ParseError('缺少 PDF 内容', 'missing_pdf')
     const overview = parseOverviewDates(doc)
-    const summary = parseAccountSummary(doc)
-    const cardLast4 = parseCardLast4(doc)
-    const transactions = parseTransactions(doc, cardLast4)
+    const fallbackCardLast4 = parseCardLast4(doc)
+    const transactions = parseTransactions(doc, fallbackCardLast4)
+    const cnyCards = new Set(transactions.filter(tx => tx.settlementCurrency === 'CNY').map(tx => tx.cardLast4))
+    const cardLast4 = cnyCards.size === 1 ? [...cnyCards][0]! : fallbackCardLast4
+    const summary = parseAccountSummary(doc, transactions)
 
     if (transactions.length === 0) {
       throw new ParseError('未在账单明细表中找到交易行', 'no_transactions_found')
@@ -187,73 +189,127 @@ function parseOverviewDates(doc: SourceDocument): OverviewDates {
   return result
 }
 
-function parseAccountSummary(doc: SourceDocument): StatementSummary {
-  const summary = emptySummary()
-  const components: NamedAmount[] = []
+/** A currency is reliable only when all explicit labels agree. */
+function currencyOf(text: string): string | null {
+  const currencies = new Set<string>()
+  if (/人民币|\bRMB\b|\bCNY\b/i.test(text)) currencies.add('CNY')
+  if (/美元|\bUSD\b/i.test(text)) currencies.add('USD')
+  if (/港币|港元|\bHKD\b/i.test(text)) currencies.add('HKD')
+  return currencies.size === 1 ? [...currencies][0]! : null
+}
+
+function accountOf(text: string): string | null {
+  return /卡号[：:]\s*(\d{4})(?!\d)/.exec(text)?.[1] ?? null
+}
+
+/** Infer the row axis from the labelled account/table block, not amount values. */
+function readingDirection(doc: SourceDocument): number | null {
+  const directions = new Set<number>()
+  for (const page of doc.pdf!.pages) {
+    const rows = pageRows(page)
+    const accounts = rows.filter(row => accountOf(row.text))
+    for (const header of rows.filter(row => /账号类型|Account Type/i.test(row.text))) {
+      const closest = [...accounts].sort((a, b) => Math.abs(a.y - header.y) - Math.abs(b.y - header.y))[0]
+      if (closest && closest.y !== header.y) directions.add(closest.y > header.y ? -1 : 1)
+    }
+  }
+  return directions.size === 1 ? [...directions][0]! : null
+}
+
+function parseAccountSummary(doc: SourceDocument, transactions: ParsedTransaction[]): StatementSummary {
+  const unavailable = emptySummary()
   const anchors = collectAnchors(doc, [
     { key: 'previous', re: /上期存款|Previous Balance/i },
     { key: 'purchase', re: /本期支出金额|^Purchase$/i },
     { key: 'payments', re: /本期存入金额|^Payments$/i },
     { key: 'current', re: /本期存款\/欠款余额|^New Balance$/i },
   ])
-  if (anchors.length < 3) return summary
+  if (anchors.length < 3) return unavailable
 
   const anchorSpread = Math.max(...anchors.map((a) => a.center)) - Math.min(...anchors.map((a) => a.center))
   const tolerance = anchorSpread / Math.max(anchors.length, 1)
 
-  for (const { row } of rowsMatching(doc, /^(人民币\/RMB|美元\/USD|港币\/HKD)/)) {
-    for (const item of row.items) {
-      const minor = amountIn(item.text)
-      if (minor === null) continue
-      const signed = applyBalanceQualifier(item.text, minor)
-      const anchor = nearestAnchor(anchors, itemCenterX(item), tolerance)
-      if (!anchor) continue
-      switch (anchor.key) {
-        case 'previous':
-          if (summary.previousBalanceMinor === null) {
-            summary.previousBalanceMinor = signed
-            components.push({ label: '上期存款/欠款余额 Previous Balance', minor: signed, currency: 'CNY' })
-          }
-          break
-        case 'purchase':
-          if (summary.newDebitMinor === null) {
-            summary.newDebitMinor = Math.abs(signed)
-            components.push({
-              label: '本期支出金额 Purchase and Adjustments',
-              minor: summary.newDebitMinor,
-              currency: 'CNY',
-            })
-          }
-          break
-        case 'payments':
-          if (summary.newCreditMinor === null) {
-            summary.newCreditMinor = Math.abs(signed)
-            components.push({
-              label: '本期存入金额 Payments and Other Credits',
-              minor: summary.newCreditMinor,
-              currency: 'CNY',
-            })
-          }
-          break
-        case 'current':
-          if (summary.currentBalanceMinor === null) {
-            summary.currentBalanceMinor = signed
-            components.push({ label: '本期存款/欠款余额 New Balance', minor: signed, currency: 'CNY' })
-          }
-          break
-        default:
-          break
+  const candidates: Array<{ account: string | null; summary: StatementSummary }> = []
+  const direction = readingDirection(doc)
+  let account: string | null = null
+  for (const page of doc.pdf!.pages) {
+    for (const row of pageRows(page).sort((a, b) => (a.y - b.y) * (direction ?? -1))) {
+      const heading = accountOf(row.text)
+      if (/卡号[：:]/.test(row.text)) account = direction === null ? null : heading
+      // An account-type row must explicitly name its own currency. Never borrow
+      // another row's missing values or the unscoped card overview balance.
+      const label = row.text.split(AMOUNT_RE)[0]?.trim() ?? ''
+      if (!/^(人民币|美元|港币|港元|RMB\b|CNY\b|USD\b|HKD\b)/i.test(label)) continue
+      if (/交易明细|Transaction Detailed List/i.test(row.text)) continue
+      const currency = currencyOf(label)
+      if (!currency) continue
+      const summary = emptySummary()
+      const components: NamedAmount[] = []
+      for (const item of row.items) {
+        const minor = amountIn(item.text)
+        if (minor === null) continue
+        const signed = applyBalanceQualifier(item.text, minor)
+        const anchor = nearestAnchor(anchors, itemCenterX(item), tolerance)
+        if (!anchor) continue
+        switch (anchor.key) {
+          case 'previous':
+            if (summary.previousBalanceMinor === null) {
+              summary.previousBalanceMinor = signed
+              components.push({ label: '上期存款/欠款余额 Previous Balance', minor: signed, currency })
+            }
+            break
+          case 'purchase':
+            if (summary.newDebitMinor === null) {
+              summary.newDebitMinor = Math.abs(signed)
+              components.push({
+                label: '本期支出金额 Purchase and Adjustments',
+                minor: summary.newDebitMinor,
+                currency,
+              })
+            }
+            break
+          case 'payments':
+            if (summary.newCreditMinor === null) {
+              summary.newCreditMinor = Math.abs(signed)
+              components.push({
+                label: '本期存入金额 Payments and Other Credits',
+                minor: summary.newCreditMinor,
+                currency,
+              })
+            }
+            break
+          case 'current':
+            if (summary.currentBalanceMinor === null) {
+              summary.currentBalanceMinor = signed
+              components.push({ label: '本期存款/欠款余额 New Balance', minor: signed, currency })
+            }
+            break
+          default:
+            break
+        }
       }
+      summary.components = components
+      if (components.length) candidates.push({ account, summary })
     }
-    if (summary.currentBalanceMinor !== null && summary.previousBalanceMinor !== null) break
   }
-
-  parseCardRow(doc, summary, components)
-  summary.components = components
+  const cards = new Set(transactions.filter(tx => tx.settlementCurrency === 'CNY').map(tx => tx.cardLast4))
+  const eligible = candidates.filter(candidate => candidate.summary.components[0]?.currency === 'CNY' &&
+    cards.size === 1 && candidate.account === [...cards][0])
+  // This parser's primary reconciliation is the RMB account. Foreign evidence
+  // stays in its printed currency; absent/ambiguous RMB scope stays insufficient.
+  const selected = eligible.length === 1 ? eligible[0]! : null
+  const summary = selected?.summary ?? unavailable
+  if (selected) parseCardRow(doc, summary, summary.components, selected.account!)
+  for (const candidate of candidates) {
+    if (candidate === selected) continue
+    summary.components.push(...candidate.summary.components.map(component => ({ ...component,
+      label: `未用于人民币对账（尾号${candidate.account ?? '未识别'}） ${component.label}`,
+    })))
+  }
   return summary
 }
 
-function parseCardRow(doc: SourceDocument, summary: StatementSummary, components: NamedAmount[]): void {
+function parseCardRow(doc: SourceDocument, summary: StatementSummary, components: NamedAmount[], cardLast4: string): void {
   const anchors = collectAnchors(doc, [
     { key: 'card', re: /^卡号$|Credit Card No/i },
     { key: 'newBalance', re: /本期应还款额|New Balanc/i },
@@ -264,15 +320,13 @@ function parseCardRow(doc: SourceDocument, summary: StatementSummary, components
   const tolerance = spread / Math.max(anchors.length, 1)
 
   for (const { row } of rowsMatching(doc, /\*{2,}/)) {
+    if (!new RegExp(`\\*{2,}\\s*${cardLast4}(?!\\d)`).test(row.text)) continue
     for (const item of row.items) {
       const minor = amountIn(item.text)
       if (minor === null) continue
       const anchor = nearestAnchor(anchors, itemCenterX(item), tolerance)
       if (!anchor) continue
-      if (anchor.key === 'newBalance' && summary.currentBalanceMinor === null) {
-        summary.currentBalanceMinor = minor
-        components.push({ label: '本期应还款额 New Balance', minor, currency: 'CNY' })
-      } else if (anchor.key === 'minimum' && summary.minimumPaymentMinor === null) {
+      if (anchor.key === 'minimum' && summary.minimumPaymentMinor === null) {
         summary.minimumPaymentMinor = minor
         components.push({ label: '本期最小还款 Minimum Payment due', minor, currency: 'CNY' })
       }
@@ -334,21 +388,33 @@ function locateTransactionHeaderBand(
 
 function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): ParsedTransaction[] {
   const result: ParsedTransaction[] = []
+  const direction = readingDirection(doc) ?? -1
+  let currency: string | null = null
   for (const page of doc.pdf!.pages) {
-    const rows = pageRows(page, 2.5)
+    const rows = pageRows(page, 2.5).sort((a, b) => (a.y - b.y) * direction)
     const headerBand = locateTransactionHeaderBand(rows)
-    if (!headerBand) continue
+    if (!headerBand) {
+      for (const row of rows) {
+        if (/交易明细|Transaction Detailed List/i.test(row.text)) currency = currencyOf(row.text)
+      }
+      continue
+    }
     const { depositCenter, expenditureCenter } = headerBand
 
     const fragments: Fragment[] = []
-    const transactionRows: RowRef[] = []
+    const transactionRows: Array<RowRef & { currency: string }> = []
 
     for (const row of rows) {
+      if (/交易明细|Transaction Detailed List/i.test(row.text)) {
+        currency = currencyOf(row.text)
+        continue
+      }
       if (isNoise(row)) continue
       const dateItems = row.items.filter((item) => ISO_DATE_RE.test(item.text.trim()) || COMPACT_DATE_RE.test(item.text.trim()))
       const hasCard = row.items.some((item) => /^\d{4}$/.test(item.text.trim()))
       if (dateItems.length >= 2 && hasCard) {
-        transactionRows.push({ pageNumber: page.pageNumber, row })
+        if (!currency) throw new ParseError('交易明细币种标记不明确，整份账单未导入', 'ambiguous_detail_currency')
+        transactionRows.push({ pageNumber: page.pageNumber, row, currency })
         continue
       }
       const text = row.text.trim()
@@ -362,12 +428,13 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
       })
     }
 
-    transactionRows.forEach((entry, index) => {
+    transactionRows.sort((a, b) => b.row.y - a.row.y).forEach((entry, index) => {
       const built = buildTransaction(entry, fragments, {
         depositCenter,
         expenditureCenter,
         fallbackCardLast4,
         sourceRow: index,
+        currency: entry.currency,
       })
       if (built) result.push(built)
     })
@@ -376,6 +443,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
 }
 
 interface ColumnConfig {
+  currency: string
   depositCenter: number
   expenditureCenter: number
   /** Statement level card last4, used when a row has no readable card digits. */
@@ -406,7 +474,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     else if (center >= config.depositCenter - 45) selected = { text: item.text, direction: 'credit' }
   }
   const selectedAmount = requireTransactionAmount(selected, config.sourceRow)
-  const parsed = requireTransactionAmount(parseAmountToMinor(selectedAmount.text.trim(), 'CNY'), config.sourceRow)
+  const parsed = requireTransactionAmount(parseAmountToMinor(selectedAmount.text.trim(), config.currency), config.sourceRow)
   assertCreditSign(parsed.negativeByFormat, selectedAmount.direction, config.sourceRow)
   const minor = signForDirection(parsed.minor, selectedAmount.direction)
 
@@ -450,9 +518,9 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     rawDescription,
     description: cleaned || '未识别交易',
     merchant: cleaned.slice(0, 40),
-    transactionCurrency: 'CNY',
+    transactionCurrency: config.currency,
     transactionAmountMinor: minor,
-    settlementCurrency: 'CNY',
+    settlementCurrency: config.currency,
     settlementAmountMinor: minor,
     type,
     typeUncertain: classification.requiresReview,
