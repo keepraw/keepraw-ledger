@@ -9,6 +9,7 @@ import { validateBackup } from '../backup/validation'
 import { createJsonBlob } from '../backup/json'
 import { deriveStatementState } from '../core/statementState'
 import { getStatementExpectedTotal } from '../core/reconciliation'
+import { MAX_ENTRY_BYTES } from '../backup/zipSafety'
 export { validateBackup } from '../backup/validation'
 
 /** Caller holds the statements + transactions write transaction. Indexed by statementId. */
@@ -464,6 +465,7 @@ export async function saveOriginalFile(input: {
   parserId: string
   generation?: number
 }): Promise<void> {
+  if (input.data.byteLength > MAX_ENTRY_BYTES) throw new Error('原始文件超过 64 MiB 备份上限，未保存附件。')
   await db.transaction('rw', db.attachments, db.imports, db.settings, async () => {
     if (input.generation !== undefined && ((await readLedgerRevision()).generation !== input.generation || !await db.imports.get(input.importId))) {
       throw new LedgerConflictError(true)
@@ -494,6 +496,40 @@ export async function markImportEvidenceMissing(record: ImportRecord, generation
 
 export async function getAttachment(fileHash: string): Promise<AttachmentRow | undefined> {
   return db.attachments.get(fileHash)
+}
+
+const EXTERNAL_FILE_PREFIX = 'archive:external:'
+
+export async function isArchiveFileExternal(fileHash: string): Promise<boolean> {
+  return (await db.settings.get(`${EXTERNAL_FILE_PREFIX}${fileHash}`))?.value === true
+}
+
+/** Local export choices are separate from app settings and financial JSON. No bytes are deleted. */
+export async function setArchiveFileExternal(fileHash: string, external: boolean, expected: LedgerRevision): Promise<void> {
+  await db.transaction('rw', db.settings, db.attachments, async () => {
+    await assertLedgerRevision(expected)
+    if (!await db.attachments.get(fileHash)) throw new Error('原始文件已不存在，请刷新后重试。')
+    await db.settings.put({ key: `${EXTERNAL_FILE_PREFIX}${fileHash}`, value: external })
+    await bumpLedgerRevision()
+  })
+}
+
+export async function listArchiveFiles(): Promise<{ revision: LedgerRevision; files: Array<{
+  fileHash: string; fileName: string; size: number; external: boolean
+}> }> {
+  return db.transaction('r', db.imports, db.attachments, db.settings, async () => {
+    const revision = await readLedgerRevision()
+    const files = []
+    const hashes = new Set<string>()
+    for (const record of await db.imports.toArray()) {
+      if (record.isDemo || hashes.has(record.fileHash)) continue
+      hashes.add(record.fileHash)
+      const row = await db.attachments.get(record.fileHash)
+      if (row) files.push({ fileHash: row.fileHash, fileName: row.fileName, size: row.data.byteLength,
+        external: await isArchiveFileExternal(row.fileHash) })
+    }
+    return { revision, files }
+  })
 }
 
 export async function hasAttachment(fileHash: string): Promise<boolean> {
