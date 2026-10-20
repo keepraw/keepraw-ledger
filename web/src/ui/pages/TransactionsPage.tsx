@@ -13,10 +13,27 @@ const PAGE_SIZE = 50
 const collator = new Intl.Collator()
 const compareDates = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0
 
+/** Collate repeated text once per distinct value, then compare integer ranks. */
+function textRanks(transactions: Transaction[], key: 'description' | 'type'): Map<string, number> | undefined {
+  if (transactions.length < 256) return undefined
+  const values = new Set(transactions.map(tx => tx[key]))
+  // Mostly unique text cannot amortize a second sort. Keep its direct comparator.
+  if (values.size > transactions.length / 4) return undefined
+  const ordered = [...values].sort(collator.compare)
+  const ranks = new Map<string, number>()
+  let rank = 0
+  for (let index = 0; index < ordered.length; index++) {
+    if (index > 0 && collator.compare(ordered[index - 1]!, ordered[index]!) !== 0) rank++
+    ranks.set(ordered[index]!, rank)
+  }
+  return ranks
+}
+
 /** Same null placement, date tie-break and stable order as the historical list. */
 export function sortTransactions(transactions: Transaction[], sortKey: SortKey, sortDir: SortDir): Transaction[] {
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
+  const ranks = sortKey === 'description' || sortKey === 'type' ? textRanks(transactions, sortKey) : undefined
   return [...transactions].sort((a, b) => {
     const left = a[sortKey], right = b[sortKey]
     if (left === null || right === null) {
@@ -31,6 +48,9 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
       return amountOrder ? amountOrder * direction : compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
     }
     if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
+    // Distinct strings that collate equally still compare as zero: only exact
+    // string equality takes the historical date tie-break above.
+    if (ranks) return (ranks.get(String(left))! - ranks.get(String(right))!) * direction
     return (dateKey ? compareDates(String(left), String(right)) : collator.compare(String(left), String(right))) * direction
   })
 }
