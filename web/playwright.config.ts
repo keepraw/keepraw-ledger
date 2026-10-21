@@ -4,6 +4,7 @@ const PORT = Number(process.env.E2E_PORT ?? 5199)
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'csp.spec.ts',
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

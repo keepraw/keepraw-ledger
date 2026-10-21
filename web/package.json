@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test && playwright test --config playwright.production.config.ts",
     "test:migration": "vitest run tests/historicalMigration.test.ts && playwright test e2e/historicalMigration.spec.ts",
     "migration:audit": "node scripts/migration-audit.mjs",
     "golden:generate": "node scripts/generate-golden.mjs",
