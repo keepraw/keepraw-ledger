@@ -109,7 +109,7 @@ export interface Transaction {
   cardLast4: string
   transactionDate: IsoDate | null
   postingDate: IsoDate | null
-  /** Cleaned description used in the UI. */
+  /** Source-cleaned identity text. UI/export use transactionDisplayDescription; never persist that projection. */
   description: string
   /** Raw description straight from the statement, kept for traceability. */
   rawDescription: string

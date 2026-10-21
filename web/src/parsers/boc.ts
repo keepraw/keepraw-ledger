@@ -1,3 +1,5 @@
+import { cleanSourceDescription } from '../core/sourceDescription'
+import { extractMerchant } from '../core/classify'
 import { addDays, addMonths, parseDateInput } from '../core/dates'
 import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
@@ -517,7 +519,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     postingDate,
     rawDescription,
     description: cleaned || '未识别交易',
-    merchant: cleaned.slice(0, 40),
+    merchant: extractMerchant(cleaned),
     transactionCurrency: config.currency,
     transactionAmountMinor: minor,
     settlementCurrency: config.currency,
@@ -533,17 +535,10 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
   }
 }
 
-const CN_MARKER = /(?<![A-Za-z])C\s*H\s*N(?![A-Za-z])/gi
-
 /**
  * pdf.js splits a merchant line across text runs, so `...平台商户C` + `HN` arrives as
  * two fragments. The currency marker is stripped, never the merchant name.
  */
 export function cleanDescription(text: string): string {
-  let value = (text ?? '').replace(/\s+/g, ' ').trim()
-  value = value.replace(CN_MARKER, '')
-  value = value.replace(/(?<![A-Za-z])C$/, '')
-  value = value.replace(/^HN(?![A-Za-z])/, '')
-  value = value.replace(/\s*\/\s*$/, '').replace(/\s{2,}/g, ' ').trim()
-  return value
+  return cleanSourceDescription(text, 'boc')
 }

@@ -1,3 +1,4 @@
+import { transactionDisplayDescription } from '../../core/descriptionNormalizer'
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { formatMinor } from '../../core/money'
@@ -200,7 +201,7 @@ export function ReviewPage() {
                           <tr key={tx.id}>
                             <td className="nowrap">{tx.transactionDate}</td>
                             <td className="truncate" title={tx.rawDescription}>
-                              {tx.description}
+                              {transactionDisplayDescription(tx)}
                             </td>
                             <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
                               {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
@@ -245,7 +246,7 @@ export function ReviewPage() {
                   <tr key={tx.id}>
                     <td className="nowrap">{tx.transactionDate}</td>
                     <td className="truncate" title={tx.rawDescription}>
-                      {tx.description}
+                      {transactionDisplayDescription(tx)}
                     </td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
                       {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
@@ -342,7 +343,7 @@ export function ReviewPage() {
                     <Badge tone="muted">备注</Badge>
                     <div>
                       <div>{note}</div>
-                      <div className="check-detail">{tx ? `${tx.transactionDate} ${tx.description}` : '该交易已不存在'}</div>
+                      <div className="check-detail">{tx ? `${tx.transactionDate} ${transactionDisplayDescription(tx)}` : '该交易已不存在'}</div>
                     </div>
                   </div>
                 )
@@ -389,7 +390,7 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
             <tr key={row.id}>
               <td>{index === 0 ? '当前交易' : '候选交易'}</td>
               <td>{bankName(row.bank)} / {row.cardLast4}</td>
-              <td>{row.transactionDate} / {row.postingDate}</td><td>{row.description}</td>
+              <td>{row.transactionDate} / {row.postingDate}</td><td>{transactionDisplayDescription(row)}</td>
               <td>{row.transactionCurrency} {formatMinor(row.transactionAmountMinor, row.transactionCurrency)}</td>
               <td>{row.settlementCurrency} {formatMinor(row.settlementAmountMinor, row.settlementCurrency)}</td>
               <td><TypeBadge type={row.type} /> / {row.direction === 'credit' ? '贷记' : '借记'}</td>

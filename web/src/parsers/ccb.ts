@@ -1,3 +1,4 @@
+import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
 import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
@@ -252,9 +253,7 @@ export function normalizeCurrency(token: string): string {
 }
 
 export function cleanDescription(text: string): string {
-  let value = (text ?? '').replace(/[\u00a0\u3000]/g, ' ').replace(/\s+/g, ' ').trim()
-  value = value.replace(/\s*\/\s*$/, '').trim()
-  return value
+  return cleanSourceDescription(text, 'ccb')
 }
 
 export function extractBankToken(description: string): string {

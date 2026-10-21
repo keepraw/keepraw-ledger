@@ -1,3 +1,4 @@
+import { transactionDisplayDescription } from '../src/core/descriptionNormalizer'
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import JSZip from 'jszip'
@@ -11,11 +12,11 @@ const demo = buildDemoDataset().flatMap(result => result.transactions)
 const pending = demo.filter(tx => tx.reviewStatus === 'pending' || tx.flags.length > 0)
 const confirmed = pending[0]!, excluded = pending[1]!
 const rowFor = (page: Page, tx: Transaction) => page.getByTestId('review-table').locator('tbody tr')
-  .filter({ has: page.getByText(tx.description, { exact: true }) })
+  .filter({ has: page.getByTitle(tx.rawDescription, { exact: true }) })
   .filter({ has: page.getByText(tx.transactionDate!, { exact: true }) })
   .filter({ has: page.getByText(formatMinor(tx.settlementAmountMinor, tx.settlementCurrency), { exact: true }) })
 const categoryFor = (page: Page, tx: Transaction) => page.getByTestId('transactions-table').locator('tbody tr')
-  .filter({ has: page.getByText(tx.description, { exact: true }) })
+  .filter({ has: page.getByTitle(`${transactionDisplayDescription(tx)}｜原始：${tx.rawDescription}`, { exact: true }) })
   .filter({ has: page.getByText(formatMinor(tx.settlementAmountMinor, tx.settlementCurrency), { exact: true }) }).getByRole('combobox')
 async function stored(page: Page) {
   return page.evaluate(async () => {
@@ -118,8 +119,8 @@ test('demo lifecycle preserves real stores, JSON/ZIP backups and real editing', 
   await page.goto('/#/dashboard')
   await expect.poll(() => page.locator('.stat-value').allTextContents()).toEqual(realStats)
   await page.goto('/#/transactions')
-  await expect(page.getByText('消费 AUD006合成真实商户', { exact: true })).toBeVisible()
-  await expect(page.getByText(confirmed.description, { exact: true })).toHaveCount(0)
+  await expect(page.getByText('AUD006合成真实商户', { exact: true })).toHaveAttribute('title', 'AUD006合成真实商户｜原始：消费 AUD006合成真实商户')
+  await expect(page.getByText(transactionDisplayDescription(confirmed), { exact: true })).toHaveCount(0)
   await switchDemo(page, true)
   await review(page)
   await expect(rowFor(page, confirmed)).toHaveCount(0)
@@ -165,13 +166,13 @@ test('demo lifecycle preserves real stores, JSON/ZIP backups and real editing', 
   await expect(page.getByText('没有需要复核的交易')).toBeVisible()
   const peer = await context.newPage()
   await peer.goto('/#/transactions')
-  await expect(peer.getByLabel('消费 AUD006合成真实商户 分类', { exact: true })).toHaveValue(before.snapshot.transactions[0].category)
+  await expect(peer.getByLabel('AUD006合成真实商户 分类', { exact: true })).toHaveValue(before.snapshot.transactions[0].category)
   await page.goto('/#/transactions')
-  await page.getByLabel('消费 AUD006合成真实商户 分类', { exact: true }).selectOption('旅行')
-  await expect(peer.getByLabel('消费 AUD006合成真实商户 分类', { exact: true })).toHaveValue('旅行')
+  await page.getByLabel('AUD006合成真实商户 分类', { exact: true }).selectOption('旅行')
+  await expect(peer.getByLabel('AUD006合成真实商户 分类', { exact: true })).toHaveValue('旅行')
   await peer.close()
   await page.reload()
-  await expect(page.getByLabel('消费 AUD006合成真实商户 分类', { exact: true })).toHaveValue('旅行')
+  await expect(page.getByLabel('AUD006合成真实商户 分类', { exact: true })).toHaveValue('旅行')
   const after = await stored(page)
   expect(after.snapshot.transactions[0]).toMatchObject({ reviewStatus: 'confirmed', category: '旅行' })
   expect(after.notes).toEqual(before.notes)

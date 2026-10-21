@@ -77,8 +77,10 @@ for (const format of MIGRATION_FORMATS) {
     expect(archiveById.size).toBe(72)
     for (const row of bySource) {
       const reference = expected[row.sourceRow - 2]!
+      // The fixture's purchase action is display noise; its stored source remains exact.
+      const displayed = reference.type === 'purchase' ? reference.description.replace(/^消费 /, '') : reference.description
       expect(archiveById.get(row.id)).toMatchObject({ 银行: reference.bankName, 卡尾号: row.cardLast4,
-        交易日: row.transactionDate, 入账日: row.postingDate, 交易描述: row.description,
+        交易日: row.transactionDate, 入账日: row.postingDate, 交易描述: displayed, 原始描述: reference.description, 商户: row.merchant,
         交易币种: row.transactionCurrency, 交易金额: String(reference.transactionAmount),
         入账币种: row.settlementCurrency, 入账金额: String(reference.settlementAmount),
         交易类型: TRANSACTION_TYPE_LABELS[reference.type], 借贷方向: reference.direction === 'debit' ? '借' : '贷',
