@@ -192,7 +192,6 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     postingDate: row.postingDate,
     description: row.description,
     rawDescription: row.rawDescription,
-    merchant: row.merchant,
     transactionCurrency: row.transactionCurrency,
     transactionAmountMinor: row.transactionAmountMinor,
     settlementCurrency: row.settlementCurrency,

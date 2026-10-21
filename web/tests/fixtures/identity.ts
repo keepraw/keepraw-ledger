@@ -9,7 +9,7 @@ export function syntheticStatement(descriptions: string[]): ParsedStatement {
     summary: emptySummary(), confidence: 1, parserId: 'synthetic', parserVersion: '1', warnings: [],
     transactions: descriptions.map((description, index) => ({
       cardLast4: '1234', transactionDate: '2024-01-05', postingDate: '2024-01-06',
-      description, rawDescription: description, merchant: description, transactionCurrency: 'CNY',
+      description, rawDescription: description, transactionCurrency: 'CNY',
       transactionAmountMinor: 12880, settlementCurrency: 'CNY', settlementAmountMinor: 12880,
       type: 'purchase', direction: 'debit', bankToken: '', confidence: 1,
       sourcePage: null, sourceRow: index + 1, rawText: description,

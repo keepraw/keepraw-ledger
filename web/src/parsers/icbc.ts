@@ -1,6 +1,6 @@
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { extractMerchant, classifyTransactionType, signForDirection } from '../core/classify'
+import { classifyTransactionType, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -360,7 +360,6 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     postingDate: postingDate ?? transactionDate,
     rawDescription,
     description,
-    merchant: extractMerchant(description),
     transactionCurrency: txnCurrency,
     transactionAmountMinor: txnMinor,
     settlementCurrency: settleCurrency,

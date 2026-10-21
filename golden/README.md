@@ -29,7 +29,7 @@ golden/
    (`消费`, `还款`, `(存入)` …) are preserved byte-for-byte.
 3. **The golden layer never merges.** `diff.json → identity` only observes which
    business keys pair (`full` / `partial` / `unpaired`, always `merged: false`).
-4. **P2 fields are never compared** (`merchant`, `category`, `flags`, `summary`).
+4. **P2 fields are never compared** (`category`, `flags`, `summary`).
 
 ## TypeScript tooling
 

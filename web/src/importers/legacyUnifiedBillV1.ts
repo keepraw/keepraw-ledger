@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
+import { inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import {
   normalizeHeader, normalizeLegacyBank, normalizeLegacyCard, normalizeLegacyCurrency,
@@ -80,7 +80,7 @@ export function parseUnifiedBillRows(data: unknown[][], columns: Map<string, num
     if (classification.requiresReview || flags.includes('amount_direction_unclear')) flags.push('transaction_type_unclear')
     rows.push({
       bank, cardLast4, transactionDate, postingDate, description, rawDescription: description,
-      merchant: extractMerchant(description), transactionCurrency, transactionAmountMinor,
+      transactionCurrency, transactionAmountMinor,
       settlementCurrency, settlementAmountMinor, type, direction, category: inferCategory(description, type),
       confidence: flags.includes('low_confidence') ? 0.5 : 0.9, flags,
       rawText: JSON.stringify(LEGACY_UNIFIED_BILL_COLUMNS.map(at)), sourceRow: rowNumber,

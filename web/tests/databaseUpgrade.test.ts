@@ -11,7 +11,7 @@ const historic = {
 const current = { ...historic, attachments: 'fileHash, importId, importedAt' }
 
 for (const version of [1, 2]) {
-  it(`upgrades v${version} to v3 without rewriting any stored record and can reopen`, async () => {
+  it(`upgrades v${version} to v4 without rewriting any stored record and can reopen`, async () => {
     const name = `synthetic-index-upgrade-${version}`
     await Dexie.delete(name)
     const old = new Dexie(name)
@@ -34,7 +34,7 @@ for (const version of [1, 2]) {
     try {
       for (let open = 0; open < 3; open++) {
         await upgraded.open()
-        expect(upgraded.verno).toBe(3)
+        expect(upgraded.verno).toBe(4)
         expect(upgraded.tables.flatMap(table => table.schema.indexes.map(index => `${table.name}.${index.name}`))).toEqual(['transactions.statementId'])
         expect(await upgraded.transactions.toArray()).toEqual(rows)
         expect(await upgraded.statements.get(result.statement!.id)).toEqual(result.statement)
@@ -72,8 +72,8 @@ it('rolls back index removal on an aborted upgrade and can subsequently upgrade 
   finally { await upgraded.delete() }
 })
 
-it('initializes a new v3 database with all six stores and the retained association index', async () => {
-  const database = new BillDatabase('synthetic-new-v3')
+it('initializes a new v4 database with all six stores and the retained association index', async () => {
+  const database = new BillDatabase('synthetic-new-v4')
   try {
     await database.open()
     expect(database.tables.map(table => table.name).sort()).toEqual(['attachments', 'imports', 'reviewNotes', 'settings', 'statements', 'transactions'])

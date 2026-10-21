@@ -20,7 +20,7 @@ it('renders the same normalized description and raw tooltip in Transactions and 
   render(<TransactionsPage />)
   const cell = screen.getByText('支付宝-合成 A-B (HK)')
   expect(cell).toHaveAttribute('title', expect.stringContaining('原始：网上消费 支付宝，合成 A-B (HK)'))
-  for (const query of ['支付宝-合成', '网上消费 支付宝', result.transactions[0]!.merchant]) {
+  for (const query of ['支付宝-合成', '网上消费 支付宝', result.transactions[0]!.rawDescription]) {
     fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: query } })
     expect(screen.getByText('支付宝-合成 A-B (HK)')).toBeVisible()
   }
@@ -38,10 +38,10 @@ it('shows and searches manual values exactly, and sorts by displayed description
   app.visibleTransactions = result.transactions
   app.visibleStatements = [result.statement!]
   expect(sortTransactions(result.transactions, 'description', 'asc').map(tx => tx.rawDescription)).toEqual(['消费 Alpha', '网上消费 Zebra'])
-  app.visibleTransactions = [{ ...result.transactions[0]!, description: '消费 我的描述-A:01', merchant: '我的商户', category: '教育' }]
+  app.visibleTransactions = [{ ...result.transactions[0]!, description: '消费 我的描述-A:01', category: '教育' }]
   render(<TransactionsPage />)
   expect(screen.getByText('消费 我的描述-A:01')).toBeVisible()
-  fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: '我的商户' } })
+  fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: '我的描述-A:01' } })
   expect(screen.getByText('消费 我的描述-A:01')).toBeVisible()
   expect(screen.getByRole('combobox', { name: '消费 我的描述-A:01 分类' })).toHaveValue('教育')
 })

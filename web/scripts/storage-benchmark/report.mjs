@@ -87,7 +87,7 @@ JSON 体积采用 \`TextEncoder().encode(JSON.stringify(...)).byteLength\`，是
 ${table(['main 文件', '检查结果'], [
   ['[db.ts](../../web/src/db/db.ts)', 'Dexie v2，6个store；v2只增加attachments，没有第二套交易数据库。附件按原字节SHA-256主键，ArrayBuffer保存。'],
   ['[repository.ts](../../web/src/db/repository.ts)', '历史导入在单个rw事务中写imports／statements，并以2000条批量bulkAdd新增交易。更新用put，备注用transactionId主键；备份只读，不持久化额外账本。'],
-  ['[types.ts](../../web/src/core/types.ts)', 'Transaction完整保留原文、展示描述、merchant、来源、指纹、flags等字段；Statement保留summary／reconciliation，ImportRecord含来源审计。'],
+  ['[types.ts](../../web/src/core/types.ts)', 'Transaction完整保留原文、展示描述、来源、指纹、flags等字段；Statement保留summary／reconciliation，ImportRecord含来源审计。'],
   ['[legacyImport.ts](../../web/src/importers/legacyImport.ts)', '预览只读，确认基于新快照重新判重；同文件哈希跳过插入，同金融行跨文件按既有occurrence匹配，合法重复保留各自ID。'],
   ['[AppStore.tsx](../../web/src/app/AppStore.tsx)', '历史导入不保存XLSX原附件；银行文件路径保存evidence。React snapshot／visible数组是内存状态；初始化两次refresh，每次单条分类编辑也refresh全量。'],
   ['[SettingsPage.tsx](../../web/src/ui/pages/SettingsPage.tsx)', '直接显示整个origin estimate，除以1024²却标MB；估计读取effect仅依赖账单／交易数量，不能将显示值当作持续实时测量。'],
@@ -119,18 +119,18 @@ ${table(['表', '0', '18,000', '36,000', '100,000'], ['transactions', 'statement
 
 “文本字节”是不含 JSON 引号／转义的 UTF-8 原值。“JSON 边际”包括字段名、值、冒号及一个分隔逗号，等于在**内存副本的序列化中**排除该字段可省的字节；它不是 IndexedDB 中该字段的物理尺寸。
 
-${table(['字段', '文本 UTF-8 B', 'JSON 值 B', 'JSON 边际 B', 'JSON 边际 MiB', '不同值数'], ['description', 'rawDescription', 'rawText', 'merchant', 'sourceFileName', 'sourceFileHash', 'fingerprint', 'flags', 'sourceId', 'origin', 'statementId'].map(key => { const f = p18.metrics.fields[key]; return [key, num(f.utf8TextBytes), num(f.jsonValueBytes), num(f.marginalBytes), mib(f.marginalBytes), num(f.uniqueValues)] }))}
+${table(['字段', '文本 UTF-8 B', 'JSON 值 B', 'JSON 边际 B', 'JSON 边际 MiB', '不同值数'], ['description', 'rawDescription', 'rawText', 'sourceFileName', 'sourceFileHash', 'fingerprint', 'flags', 'sourceId', 'origin', 'statementId'].map(key => { const f = p18.metrics.fields[key]; return [key, num(f.utf8TextBytes), num(f.jsonValueBytes), num(f.marginalBytes), mib(f.marginalBytes), num(f.uniqueValues)] }))}
 
 - description 与 rawDescription **18,000 / 18,000 完全相同**。这是所有历史适配器的实际归一化结果，后者仍按模型保存以供追溯。
 - rawText 与 description 相同 **${num(p18.metrics.equalities.descriptionRawText)} / 18,000（${(p18.metrics.equalities.descriptionRawText / 18000 * 100).toFixed(1)}%）**；其余保存日期、卡尾号、币种、金额或原始行上下文。不能将 rawText 全部判为无用副本。
-- merchant 与完整 description 完全相同 **0 条**，但全部由现有 \`extractMerchant\` 确定性派生，去掉类型前缀、处理分隔符并截断。它在搜索中实际使用，属于可重算信息，不等于新的独立证据。
+- 当前 v4 结构没有独立 merchant 字段；交易详情及支付渠道由 description 展示，原始描述继续保留。旧版测量中的退役字段指标仅是历史证据。
 - sourceFileName 和 sourceFileHash 各只有 **1 个不同值**，被重复写到所有交易中，也出现在 Statement／ImportRecord。正常历史适配器会采用上传 workbook 的文件名／哈希，不把“标准字段”内原 source_file_name／source_file_hash 拷进 Transaction；这属于既有来源语义，本轮未改变。
 - origin、sourceId、sourcePage、isDemo 也是文件／路径级常量；statementId 按 576 个账单重复。fingerprint 有 17,820 个不同值，180 个合法重复需要 occurrence 区分，不能据此删掉金融身份信息。flags 只有 0.197 MiB JSON 边际，不是主要膨胀源。
 - 平均 Transaction 中 JSON 值约 **500.86 B**，字段名与标点净贡献约 **425 B**（约 **45.9%**）；这解释了短描述对象仍接近 1 KB 的 JSON 表象。Chromium 使用结构化克隆／LevelDB，不直接存这些 JSON 文本，不能据此声称 IndexedDB 也承担同一比例。
 
 ${table(['纯序列化反事实：排除字段', '理论 JSON 节省 B', '理论 JSON 节省 MiB'], Object.entries(p18.metrics.counterfactuals).map(([key, value]) => [key, num(value.savedBytes), mib(value.savedBytes)]))}
 
-五个字段组合理论可减少 **${(p18.metrics.counterfactuals['rawDescription+rawText+merchant+sourceFileName+sourceFileHash'].savedBytes / p18.metrics.tables.transactions.jsonBytes * 100).toFixed(1)}%** Transaction JSON。**没有删除任何生产字段，也没有把这些反事实对象写入 IndexedDB。** 高频相同字符串可被底层压缩；上述 5.718 MiB 不能作为可兑现的浏览器用量收益。
+反事实字段组合仅描述给定输入的序列化大小，不代表 IndexedDB 的实际物理收益。旧版结果可能包含已经退役的字段；不得将历史数字当作当前 v4 测量。
 
 ### 不同历史格式与长 rawText 敏感性
 
@@ -221,7 +221,7 @@ ${table(['优先级', '独立 PR 范围', '数据依据与验证目标'], [
   ['P1', '主线程 XLSX 解析／历史预览性能单独优化', '100k 导入约44.7s，预览有9.581s long task。评估 worker／可中断进度与批量边界，保持 importer 金融结果和备份格式；重复测导入耗时和最长 long task。'],
   ['P2', '审计二级索引是否实际需要，再单独做迁移', `21个声明索引，3个boolean索引无entry；当前显式索引查询仅statementId。整体索引对照约${mib(median(indexDifferences))} MiB及写入代价。逐个保留必要查询能力；任何索引调整都在另外PR，需升级／回滚和浏览器基准。`],
   ['P2', '修复旧持久化 demo 启动清理留下孤立 notes／attachments', '孤立条件已在独立旧版 fixture 复现。只清有明确 demo 来源且不被真实 import／交易引用的记录，保留共享 hash 的真实证据。验收旧库迁移、共享引用与真实 notes 不误删。'],
-  ['P3', '重复来源信息／可派生 merchant 的存储方案评估', '仅序列化反事实五字段理论省5.718 MiB，物理收益未测。先保留所有交易字段和证据，评估相容的编码／引用或派生缓存方案及真实浏览器收益；不要优先删 rawText、ID、fingerprint 或改现有导出格式。'],
+  ['P3', '重复来源信息的编码／引用评估', '当前 v4 已删除冗余 merchant 字段。保留历史测量作为旧结构证据；如需量化物理收益，须重新运行浏览器基准，不推算收益。'],
 ])}
 
 存储优化与性能优化分开：减少 JSON 字段并不自动消除全量快照／排序；删索引也不会自动加速当前 React 查询。优先处理已实测的恢复失败和可感知交互延迟，再评估存储改进。

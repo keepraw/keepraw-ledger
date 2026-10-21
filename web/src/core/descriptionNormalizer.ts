@@ -18,7 +18,7 @@ export function normalizeDisplayDescription(description: string): string {
 /**
  * Read-only compatibility for new imports and old databases. Only transform a
  * recognized original import value. Divergent (possibly edited) values stay exact.
- * No persisted description, merchant, category or identity field is rewritten.
+ * No persisted description, category or identity field is rewritten.
  */
 export function transactionDisplayDescription(tx: Pick<Transaction, 'description' | 'rawDescription' | 'bank'>): string {
   const original = spaces(tx.rawDescription)
@@ -29,6 +29,6 @@ export function transactionDisplayDescription(tx: Pick<Transaction, 'description
 
 export function matchesTransactionDescription(tx: Transaction, needle: string): boolean {
   const query = needle.toLowerCase()
-  return [transactionDisplayDescription(tx), tx.description, tx.merchant, tx.rawDescription]
+  return [transactionDisplayDescription(tx), tx.description, tx.rawDescription]
     .some(value => value.toLowerCase().includes(query))
 }

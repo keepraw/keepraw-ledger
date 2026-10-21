@@ -1,5 +1,5 @@
 import { parseDateInput, resolveShortDate } from '../core/dates'
-import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -440,7 +440,6 @@ function parseRow(
     postingDate: postingDate ?? transactionDate,
     rawDescription,
     description,
-    merchant: extractMerchant(description),
     transactionCurrency: transactionParsed.currency,
     transactionAmountMinor: signForDirection(transactionParsed.minor, direction),
     settlementCurrency: settlementParsed.currency,

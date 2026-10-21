@@ -126,7 +126,7 @@ export function TransactionsPage() {
           <input
             className="input"
             style={{ flex: '1 1 220px' }}
-            placeholder="搜索商户、描述、卡尾号"
+            placeholder="搜索交易描述、原文、卡尾号"
             value={search}
             data-testid="transaction-search"
             onChange={(event) => {

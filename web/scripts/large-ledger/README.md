@@ -64,10 +64,10 @@ animation frames. The original pretty-JSON encoding microbenchmark remains
 separate from the actual download API. Dates and descriptions use the production
 sorter where present, with the exact original comparator for old main.
 
-Migration mode verifies v1/v2 -> v3, failed v2 upgrades, new v3 stores, three
+Migration mode now verifies v1/v2/v3 -> v4, failed v2 upgrades, new v4 stores, three
 reopens, and every stored field including notes, original timestamps/bytes and
-settings. Native IndexedDB version numbers are 10/20/30 for Dexie v1/v2/v3. Old v2
-and new v3 have three separately seeded profiles each for write/storage medians.
+settings. Native IndexedDB version numbers are 10/20/30/40 for Dexie v1/v2/v3/v4. Historical v2
+and v3 controls have three separately seeded profiles each for write/storage medians.
 Queries and edits are sampled three times per profile. Index mode compares v2/v3
 without upgrading the old controls, then shuts down and reopens both schemas
 read-only before recording their stable storage estimates and file sizes.
@@ -90,3 +90,8 @@ and Playwright suites. The full 100k suite is deliberately a separate command.
 reads with a test-only native readonly getAll implementation (7 pairs per
 profile). It verifies complete snapshots match after sampling. It is an
 experiment, not a production path or a replacement for the main benchmark.
+
+The active probes no longer read or measure an independent `merchant` transaction
+field. Archived v2/v3 storage results retain their original schema and measurements;
+they are not v4 performance evidence. Ordinary Chromium tests separately exercise
+v3 records carrying the retired field and rollback after the real v4 deletion.

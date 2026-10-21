@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
+import { inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import type { LegacyAnomaly, NormalizedLegacyRow } from './types'
 import {
@@ -139,7 +139,6 @@ export function parseKeeprawRows(dataRows: unknown[][], shape: KeeprawSheetShape
       postingDate,
       description: rawDescription,
       rawDescription,
-      merchant: extractMerchant(rawDescription),
       transactionCurrency,
       transactionAmountMinor,
       settlementCurrency,

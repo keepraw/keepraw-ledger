@@ -33,6 +33,7 @@ for (const format of MIGRATION_FORMATS) {
     await page.getByTestId('export-xlsx').click()
     const book = XLSX.read(await readFile((await (await xlsxEvent).path())!))
     const rows = XLSX.utils.sheet_to_json<string[]>(book.Sheets['交易明细']!, { header: 1 })
+    expect(rows[0]).not.toContain('商户')
     expect(rows[1]![4]).toBe(normalized)
     expect(rows[1]![rows[0]!.indexOf('原始描述')]).toBe(raw)
     await page.goto('/#/review')
@@ -46,12 +47,12 @@ for (const format of MIGRATION_FORMATS) {
       const url = '/src/db/db.ts', { db } = await import(url)
       const repository = '/src/db/repository.ts', { patchTransaction } = await import(repository)
       const row = (await db.transactions.toArray())[0]
-      await patchTransaction({ id: row.id, description: '消费 我的描述-A:01', merchant: '我的商户', category: '教育' })
+      await patchTransaction({ id: row.id, description: '消费 我的描述-A:01', category: '教育' })
     })
     await page.goto('/#/transactions')
     await page.reload()
     await expect(page.locator('tbody tr')).toContainText('消费 我的描述-A:01')
-    await page.getByTestId('transaction-search').fill('我的商户')
+    await page.getByTestId('transaction-search').fill('我的描述-A:01')
     await expect(page.locator('tbody tr')).toHaveCount(1)
     const after = await page.evaluate(async () => {
       const url = '/src/db/db.ts', { db } = await import(url)

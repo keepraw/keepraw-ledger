@@ -113,7 +113,6 @@ export interface Transaction {
   description: string
   /** Raw description straight from the statement, kept for traceability. */
   rawDescription: string
-  merchant: string
   transactionCurrency: string
   /** Signed minor units, positive = expense, negative = credit/refund/repayment. */
   transactionAmountMinor: number

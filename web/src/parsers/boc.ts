@@ -1,5 +1,4 @@
 import { cleanSourceDescription } from '../core/sourceDescription'
-import { extractMerchant } from '../core/classify'
 import { addDays, addMonths, parseDateInput } from '../core/dates'
 import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
@@ -519,7 +518,6 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     postingDate,
     rawDescription,
     description: cleaned || '未识别交易',
-    merchant: extractMerchant(cleaned),
     transactionCurrency: config.currency,
     transactionAmountMinor: minor,
     settlementCurrency: config.currency,

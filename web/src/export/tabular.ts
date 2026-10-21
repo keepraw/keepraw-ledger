@@ -32,7 +32,6 @@ export const EXPORT_COLUMNS = [
   { key: 'fingerprint', header: '业务指纹' },
   { key: 'occurrence', header: '重复序号' },
   { key: 'rawDescription', header: '原始描述' },
-  { key: 'merchant', header: '商户' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -65,7 +64,6 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.fingerprint,
     String(transaction.occurrence),
     transaction.rawDescription,
-    transaction.merchant,
   ]
 }
 

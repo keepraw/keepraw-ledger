@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeDisplayDescription as normalize, transactionDisplayDescription as display, matchesTransactionDescription as matches } from '../src/core/descriptionNormalizer'
-import { extractMerchant, extractSourceTypeToken, classifyTransactionType } from '../src/core/classify'
+import { extractSourceTypeToken, classifyTransactionType } from '../src/core/classify'
 import { buildCsv, EXPORT_COLUMNS, transactionToRow } from '../src/export/tabular'
 import { buildLedgerArchiveBuffer, LEDGER_ARCHIVE_HUMAN_SHEET, LEDGER_ARCHIVE_METADATA_SHEET } from '../src/export/ledgerArchive'
 import { ingestSynthetic, EMPTY_SNAPSHOT } from './fixtures/identity'
@@ -38,7 +38,6 @@ describe('local description display rules', () => {
   it.each(cases)('%s → %s (idempotent and complete merchant)', (raw, expected) => {
     expect(normalize(raw)).toBe(expected)
     expect(normalize(normalize(raw))).toBe(expected)
-    expect(extractMerchant(raw)).toBe(expected)
   })
   it.each(['退款', '还款', '分期扣款', '分期原始', '手续费', '利息', '取现', '返现', '调整'])('retains %s semantics and classification', token => {
     const raw = `${token} 支付宝-合成商户`
@@ -49,7 +48,7 @@ describe('local description display rules', () => {
   })
   it('does not truncate long or mixed-language merchants', () => {
     const name = 'ACME-A:消费支付研究 (HONG KONG) 123 '.repeat(5).trim()
-    expect(extractMerchant(`消费 支付宝-${name}`)).toBe(`支付宝-${name}`)
+    expect(normalize(`消费 支付宝-${name}`)).toBe(`支付宝-${name}`)
   })
 })
 
@@ -71,12 +70,12 @@ it('shows old source text without mutating identity or creating repeat imports',
   expect(buildCsv(stored)).toContain('支付宝-合成 A-B (HK)')
 })
 
-it('preserves manual description, merchant and category across display, search, exports and JSON recovery', async () => {
+it('preserves manual description and category across display, search, exports and JSON recovery', async () => {
   await db.delete(); await db.open()
   const result = ingestSynthetic(['消费 支付宝-合成原始商户'])
-  const edited = { ...result.transactions[0]!, description: '消费 自定义 A-B:01', merchant: '我的消费支付商户', category: '教育' as const }
+  const edited = { ...result.transactions[0]!, description: '消费 自定义 A-B:01', category: '教育' as const }
   expect(display(edited)).toBe(edited.description)
-  expect(matches(edited, '我的消费支付商户')).toBe(true)
+  expect(matches(edited, '自定义 A-B:01')).toBe(true)
   expect(matches(edited, '支付宝-合成原始商户')).toBe(true)
   expect(transactionToRow(edited)[4]).toBe(edited.description)
   await db.transactions.add(edited); await db.statements.add(result.statement!)
@@ -105,7 +104,7 @@ it.each(MIGRATION_FORMATS)('$sheet: normalizes all imported banks and retains du
   expect(first.inserted).toHaveLength(6)
   for (const tx of first.inserted) {
     expect(display(tx)).toBe('支付宝-合成 A-B (HK)')
-    expect(tx.merchant).toBe('支付宝-合成 A-B (HK)')
+    expect(tx).not.toHaveProperty('merchant')
     expect(tx.rawDescription).toBe(raw)
   }
   const existing = { imports: [], transactions: first.inserted, statements: first.statements }

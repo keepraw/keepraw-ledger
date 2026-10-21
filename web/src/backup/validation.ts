@@ -56,7 +56,8 @@ function statement(value: unknown): value is Row {
 
 function transaction(value: unknown): value is Row {
   return object(value) && identifier(value.id) && identifier(value.statementId) && identifier(value.fingerprint) && bank(value.bank) &&
-    strings(value, ['cardLast4', 'description', 'rawDescription', 'merchant', 'sourceFileName', 'sourceFileHash', 'rawText']) &&
+    strings(value, ['cardLast4', 'description', 'rawDescription', 'sourceFileName', 'sourceFileHash', 'rawText']) &&
+    (!Object.hasOwn(value, 'merchant') || text(value.merchant)) &&
     date(value.transactionDate) && date(value.postingDate) && currency(value.transactionCurrency) && currency(value.settlementCurrency) &&
     integer(value.transactionAmountMinor) && integer(value.settlementAmountMinor) && oneOf(value.type, TRANSACTION_TYPES) &&
     oneOf(value.direction, ['debit', 'credit']) && oneOf(value.category, CATEGORIES) &&

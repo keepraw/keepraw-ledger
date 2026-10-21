@@ -1,4 +1,3 @@
-import { normalizeDisplayDescription } from './descriptionNormalizer'
 import type { Category, Direction, TransactionType } from './types'
 
 /** Authoritative bank tokens and explicit, delimited source-format prefixes only. */
@@ -80,11 +79,6 @@ export function inferCategory(description: string, type: TransactionType): Categ
   }
   if (type === 'purchase' || type === 'installment_payment' || type === 'installment_original') return '未分类'
   return '其他'
-}
-
-/** Keep the channel and the complete merchant name, including punctuation. */
-export function extractMerchant(description: string): string {
-  return normalizeDisplayDescription(description ?? '')
 }
 
 export function signForDirection(minor: number, direction: Direction): number {

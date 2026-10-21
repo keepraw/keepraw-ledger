@@ -38,7 +38,8 @@ it.each(['boc', 'abc', 'icbc', 'ccb', 'bocom', 'citic'] as const)('%s: real pars
   expect(row).toBeDefined()
   const before = structuredClone(first)
   expect(transactionDisplayDescription(row)).toBe('支付宝-合成 A-B (HK)')
-  expect(row.merchant).toBe('支付宝-合成 A-B (HK)')
+  expect(row).not.toHaveProperty('merchant')
+  expect(parsed.transactions.every(tx => !Object.hasOwn(tx, 'merchant'))).toBe(true)
   expect(row).toMatchObject({ description: raw, rawDescription: raw, type: 'purchase', direction: 'debit' })
   expect(first).toEqual(before)
   const repeat = ingestParsedStatement(parsed, { fileName: 'repacked', fileHash: 'two', fileSize: 1, sourceType: doc.sourceType }, {

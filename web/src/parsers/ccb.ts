@@ -1,6 +1,6 @@
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -319,7 +319,6 @@ function parseEightColRow(cells: string[], rowIndex: number, fallbackCardLast4: 
     postingDate: postingDate ?? transactionDate,
     rawDescription,
     description,
-    merchant: extractMerchant(description),
     transactionCurrency: txnCurrency,
     transactionAmountMinor,
     settlementCurrency: settleCurrency,
@@ -359,7 +358,6 @@ function parseSixColRow(cells: string[], rowIndex: number, fallbackCardLast4: st
     postingDate: postingDate ?? transactionDate,
     rawDescription,
     description: cleaned || '未识别交易',
-    merchant: extractMerchant(cleaned || rawDescription),
     transactionCurrency: txnSplit.currency,
     transactionAmountMinor,
     settlementCurrency: settleSplit.currency,

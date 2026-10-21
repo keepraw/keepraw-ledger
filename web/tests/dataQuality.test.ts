@@ -16,7 +16,6 @@ function tx(overrides: Partial<Transaction> = {}): Transaction {
     postingDate: '2024-01-06',
     description: '消费 示例商户',
     rawDescription: '消费 示例商户',
-    merchant: '',
     transactionCurrency: 'CNY',
     transactionAmountMinor: 10000,
     settlementCurrency: 'CNY',

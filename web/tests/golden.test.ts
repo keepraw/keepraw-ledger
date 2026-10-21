@@ -23,7 +23,6 @@ function makeParsed(): ParsedTransaction {
     postingDate: '2026-05-23',
     rawDescription: '消费 test-shop',
     description: '消费 test-shop',
-    merchant: 'test-shop',
     transactionCurrency: 'CNY',
     transactionAmountMinor: 1382,
     settlementCurrency: 'CNY',
