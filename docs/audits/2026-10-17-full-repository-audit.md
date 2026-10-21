@@ -7,6 +7,8 @@
 **Original report/PR head:** `164210edf359d8d002c8bf8fda2281912de865f5`
 **Change boundary:** This Markdown report only. No application, formal test, dependency declaration, lockfile, schema, CI, deployment, or main-branch changes.
 
+> Follow-up closure review: [2026-10-21 AUD-003 and all-findings verification](2026-10-21-audit-closure.md). This original report retains its historical baseline and findings.
+
 ## 1. Executive Summary
 
 The independent audit confirms material correctness and isolation defects in the specified baseline. **The revised distribution is 0 P0, 4 P1, 8 P2, 1 P3, and 1 Recommendation.** Thirteen defects are Confirmed; the CSP recommendation is not a vulnerability. The original AUD-001–003 identifiers are retained. Findings are grouped by risk below, with new identifiers AUD-004–014.

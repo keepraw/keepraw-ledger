@@ -1,0 +1,145 @@
+{
+  "dateUtc": "2026-10-21",
+  "baselineMain": "df796f5571bc6830ccc7e98b564f284d90d5e9d3",
+  "branch": "security/aud003-csp-hardening",
+  "scope": "Synthetic data only; local production preview; no production deployment or user ledger access.",
+  "environment": {
+    "node": "v24.21.0",
+    "npm": "11.19.0",
+    "arch": "arm64",
+    "vite": "6.4.4",
+    "vitest": "4.1.11",
+    "playwright": "1.64.0",
+    "chromium": "156.0.8078.4",
+    "browserLibraries": "Temporary extracted packages under /tmp; LD_LIBRARY_PATH set for browser test process."
+  },
+  "liveBefore": {
+    "url": "https://ledger.keepraw.com/",
+    "status": 200,
+    "headers": {
+      "server": "GitHub.com",
+      "content-type": "text/html; charset=utf-8",
+      "last-modified": "Tue, 20 Oct 2026 12:56:02 GMT",
+      "date": "Wed, 21 Oct 2026 03:32:02 GMT"
+    },
+    "hasHttpCsp": false,
+    "hasMetaCsp": false,
+    "pages": {
+      "build_type": "workflow",
+      "cname": "ledger.keepraw.com",
+      "https_enforced": false,
+      "deployment": 7200243985,
+      "sha": "df796f5571bc6830ccc7e98b564f284d90d5e9d3",
+      "state": "success"
+    }
+  },
+  "prePolicyRegression": {
+    "command": "npx playwright test --config playwright.production.config.ts --grep \"blocks unnecessary\"",
+    "config": "origin/main:web/vite.config.ts; current test harness; policy config restored afterwards",
+    "exitCode": 1,
+    "result": {
+      "ran": true,
+      "evalBlocked": false,
+      "scripts": [
+        false,
+        false,
+        false
+      ],
+      "connectBlocked": false,
+      "workerBlocked": false,
+      "baseUnchanged": false,
+      "styleBlocked": false
+    },
+    "meaning": "Missing defense-in-depth control, not evidence of an input-to-script exploit."
+  },
+  "postPolicyRegression": {
+    "result": {
+      "ran": false,
+      "evalBlocked": true,
+      "scripts": [
+        true,
+        true,
+        true
+      ],
+      "connectBlocked": true,
+      "workerBlocked": true,
+      "baseUnchanged": true,
+      "styleBlocked": true
+    },
+    "requiredViolationDirectives": [
+      "script-src-elem",
+      "script-src",
+      "connect-src",
+      "worker-src",
+      "style-src-elem",
+      "img-src",
+      "object-src",
+      "base-uri"
+    ],
+    "externalRequestsReachingRoute": 0
+  },
+  "localValidation": {
+    "npm ci": {
+      "exitCode": 0,
+      "packagesAdded": 330
+    },
+    "npm run typecheck": {
+      "exitCode": 0
+    },
+    "npm run lint": {
+      "exitCode": 0,
+      "errors": 0,
+      "existingWarnings": 2
+    },
+    "npm test": {
+      "exitCode": 0,
+      "filesPassed": 54,
+      "filesSkipped": 1,
+      "testsPassed": 851,
+      "testsSkipped": 6,
+      "skips": "Existing private-statement acceptance samples unavailable; no new skips."
+    },
+    "npm run build": {
+      "exitCode": 0
+    },
+    "npm audit --audit-level=high": {
+      "exitCode": 0,
+      "vulnerabilities": 0
+    },
+    "npm run test:e2e": {
+      "exitCode": 0,
+      "development": {
+        "passed": 47,
+        "skipped": 2
+      },
+      "production": {
+        "passed": 3,
+        "skipped": 0
+      },
+      "skips": "Existing private-statement browser acceptance samples unavailable."
+    }
+  },
+  "sha256": {
+    "web/vite.config.ts": "06c9f2ac25a5fdb8d7bf7e715978b97997d2f1ab59dfafcd13ed6e67d2175333",
+    "web/package.json": "bfe8e048e4d9621860bf290191fe269e3654e5f54126c4d5c06d9bac5041f760",
+    "web/playwright.config.ts": "4d405d90f5fe3560f41bfe2566000b49c749d3b3bae11612b615e10391426d57",
+    "web/playwright.production.config.ts": "5a313102d6fdcb05867fceb29911d22f97e2b1642b8b29e25546c0a629dcd0a7",
+    "web/e2e/csp.spec.ts": "6e9cb474243af67a0b25f0cfe6cce4dc6200a8a46aef1877ab13ec8f6980a194",
+    "web/tsconfig.node.json": "61b5f5648570a0d40225e0bf4eca0dd182b7f5f35d5c35734c042c6b831dd9ae",
+    "web/package-lock.json": "5c8889f009ccf7e26f35576f9642e26b6b39afb0e7c246f7ecb988b332804122",
+    "web/dist/index.html": "68b58c380127e5bf36de7239c4dd5852a647e38111493616a0c5c935a0bae6d9",
+    "web/dist/assets/index-CgLhpbnP.js": "382f0d992effdc32f0e1f3acdcab85ad5ddbc5afdb0aa1001ce23c6d51459ba3",
+    "web/dist/assets/index-kL0Q4g6W.css": "4295d7750f33d936791aba39a4fb2b15c3955990590261355a02e622be95be4f"
+  },
+  "liveEntrySha256": "382f0d992effdc32f0e1f3acdcab85ad5ddbc5afdb0aa1001ce23c6d51459ba3",
+  "remoteValidation": "Final commit attribution and exact-head CI results are recorded in the PR delivery record; historical main CI is not counted as current validation.",
+  "notVerified": [
+    "Production deployment of this PR",
+    "HTTP response-header CSP / frame-ancestors / Worker internal CSP",
+    "Firefox/WebKit/mobile",
+    "Current private issuer statements",
+    "Physical storage failure, eviction, crash durability",
+    "Full current 100k performance/restore campaign",
+    "Exhaustive malicious-format fuzzing and original S-01 through S-05"
+  ]
+}
