@@ -1,3 +1,4 @@
+import { transactionDisplayDescription } from '../core/descriptionNormalizer'
 /**
  * Human-readable ledger archive (XLSX).
  *
@@ -57,7 +58,7 @@ export const LEDGER_HUMAN_HEADERS = [
 ] as const
 
 /**
- * Sheet 2 headers, in task order (6 columns):
+ * Sheet 2 headers (original six audit columns plus raw description):
  * transaction ID / statement ID / fingerprint / duplicate occurrence /
  * source statement (original source file name) / import timestamp
  * (`imported_at`, resolved from the linked statement).
@@ -69,6 +70,7 @@ export const LEDGER_METADATA_HEADERS = [
   'duplicate_occurrence',
   'source_statement',
   'imported_at',
+  'raw_description',
 ] as const
 
 export type LedgerArchiveCell = string | number | null
@@ -106,7 +108,7 @@ export function transactionToHumanRow(transaction: Transaction): LedgerArchiveCe
     text(transaction.cardLast4),
     text(transaction.transactionDate ?? ''),
     text(transaction.postingDate ?? ''),
-    text(transaction.description),
+    text(transactionDisplayDescription(transaction)),
     text(TRANSACTION_TYPE_LABELS[transaction.type] ?? transaction.type),
     text(directionLabel(transaction.direction)),
     text(transaction.transactionCurrency),
@@ -136,6 +138,7 @@ export function transactionToMetadataRow(
     transaction.occurrence,
     text(transaction.sourceFileName),
     text(importedAt),
+    text(transaction.rawDescription),
   ]
 }
 

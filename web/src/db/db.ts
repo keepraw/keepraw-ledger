@@ -83,6 +83,12 @@ export class BillDatabase extends Dexie {
       reviewNotes: 'transactionId',
       attachments: 'fileHash',
     })
+    // One atomic versionchange transaction; identity and all other data stay exact.
+    this.version(4).stores({}).upgrade(async transaction => {
+      await transaction.table('transactions').toCollection().modify((row: { merchant?: unknown }) => {
+        delete row.merchant
+      })
+    })
   }
 }
 

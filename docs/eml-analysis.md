@@ -127,7 +127,7 @@
 
 - `rawDescription`：表格原文（仅空白折叠），永久保留。
 - `description`：去 HTML 换行、多余空格、尾部 ` /` 与无意义符号（如 `财付通 /→财付通`），保留内部 `/`。
-- `merchant`：`description` 截断 40 字（`extractMerchant` 风格），不含卡号与金额。
+- `description` 保留完整交易详情（渠道、商户名称和交易语义），`rawDescription` 保留原文；v4 已移除独立 `merchant` 字段，不再截断或提取第二个标签。
 
 ## 8. 已知限制
 

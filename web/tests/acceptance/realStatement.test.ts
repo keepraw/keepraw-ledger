@@ -106,7 +106,6 @@ describe.skipIf(!bocAvailable)('Case A - real Bank of China PDF', () => {
         postingDate: tx.postingDate,
         description: tx.description,
         rawDescription: tx.rawDescription,
-        merchant: tx.merchant,
         transactionCurrency: tx.transactionCurrency,
         transactionAmountMinor: tx.transactionAmountMinor,
         settlementCurrency: tx.settlementCurrency,
@@ -197,7 +196,6 @@ function toTransaction(
     postingDate: string | null
     description: string
     rawDescription: string
-    merchant: string
     transactionCurrency: string
     transactionAmountMinor: number
     settlementCurrency: string
@@ -219,7 +217,6 @@ function toTransaction(
     postingDate: tx.postingDate,
     description: tx.description,
     rawDescription: tx.rawDescription,
-    merchant: tx.merchant,
     transactionCurrency: tx.transactionCurrency,
     transactionAmountMinor: tx.transactionAmountMinor,
     settlementCurrency: tx.settlementCurrency,

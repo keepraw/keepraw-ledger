@@ -1,3 +1,4 @@
+import { transactionDisplayDescription, matchesTransactionDescription } from '../../core/descriptionNormalizer'
 import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { applyFilters, DEFAULT_FILTERS, type Filters } from '../../core/analytics'
@@ -16,7 +17,8 @@ const compareDates = (left: string, right: string) => left < right ? -1 : left >
 /** Sort repeated text groups once, then apply the historical date tie within each. */
 function sortRepeatedText(transactions: Transaction[], key: 'description' | 'type', direction: number): Transaction[] | undefined {
   if (transactions.length < 256) return undefined
-  const values = new Set(transactions.map(tx => tx[key]))
+  const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : tx[key]
+  const values = new Set(transactions.map(valueOf))
   // Mostly unique text cannot amortize a second sort. Keep its direct comparator.
   if (values.size > transactions.length / 4) return undefined
   const ordered = [...values].sort((left, right) => {
@@ -30,7 +32,7 @@ function sortRepeatedText(transactions: Transaction[], key: 'description' | 'typ
     if (left !== null && right !== null && collator.compare(left, right) === 0) return undefined
   }
   const groups = new Map(ordered.map(value => [value, [] as Transaction[]]))
-  for (const tx of transactions) groups.get(tx[key])!.push(tx)
+  for (const tx of transactions) groups.get(valueOf(tx))!.push(tx)
   return ordered.flatMap(value => groups.get(value)!.sort((a, b) => compareDates(a.transactionDate ?? '', b.transactionDate ?? '')))
 }
 
@@ -43,7 +45,8 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
     if (repeated) return repeated
   }
   return [...transactions].sort((a, b) => {
-    const left = a[sortKey], right = b[sortKey]
+    const left = sortKey === 'description' ? transactionDisplayDescription(a) : a[sortKey]
+    const right = sortKey === 'description' ? transactionDisplayDescription(b) : b[sortKey]
     if (left === null || right === null) {
       if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
       return left === null ? 1 : -1
@@ -77,8 +80,7 @@ export function TransactionsPage() {
       if (typeFilter && tx.type !== typeFilter) return false
       if (!needle) return true
       return (
-        tx.description.toLowerCase().includes(needle) ||
-        tx.merchant.toLowerCase().includes(needle) ||
+        matchesTransactionDescription(tx, needle) ||
         tx.cardLast4.includes(needle) ||
         bankName(tx.bank).includes(needle)
       )
@@ -124,7 +126,7 @@ export function TransactionsPage() {
           <input
             className="input"
             style={{ flex: '1 1 220px' }}
-            placeholder="搜索商户、描述、卡尾号"
+            placeholder="搜索交易描述、原文、卡尾号"
             value={search}
             data-testid="transaction-search"
             onChange={(event) => {
@@ -229,8 +231,8 @@ export function TransactionsPage() {
                         </>
                       ) : null}
                     </td>
-                    <td className="truncate" title={`${tx.description}｜原始：${tx.rawDescription}`}>
-                      {tx.description}
+                    <td className="truncate" title={`${transactionDisplayDescription(tx)}｜原始：${tx.rawDescription}`}>
+                      {transactionDisplayDescription(tx)}
                     </td>
                     <td className="nowrap muted">{tx.settlementCurrency}</td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
@@ -243,7 +245,7 @@ export function TransactionsPage() {
                       <select
                         className="select"
                         value={tx.category}
-                        aria-label={`${tx.description} 分类`}
+                        aria-label={`${transactionDisplayDescription(tx)} 分类`}
                         onChange={(event) => void updateTransaction({ id: tx.id, category: event.target.value as Category })}
                       >
                         {CATEGORIES.map((category) => (
@@ -284,7 +286,7 @@ export function TransactionsPage() {
 }
 
 export function transactionSortKeyOf(tx: Transaction): string {
-  return `${tx.bank}|${tx.cardLast4}|${tx.transactionDate}|${tx.description}`
+  return `${tx.bank}|${tx.cardLast4}|${tx.transactionDate}|${transactionDisplayDescription(tx)}`
 }
 
 export function statusBadgeFor(status: Transaction['reviewStatus']) {

@@ -1,3 +1,7 @@
+> Historical measurement: the tables and schema descriptions below predate the
+> v4 removal of the standalone `merchant` field. Retained metric names and numbers
+> document that original experiment; they do not describe the current schema.
+
 # Storage Benchmark Report — Keepraw-Ledger
 
 测试日期：2026-10-14。被测 main：`37a603be23f3c27beddea3be9c6b97de7482089d`（Python retirement 后）。仅新增独立基准脚本及本报告；Transaction／IndexedDB schema、ID、fingerprint、importer、备份格式、XLSX export、UI 和生产逻辑均未修改。所有数据为合成数据，未读取真实用户账本、私人银行账单或既有用户浏览器 profile。

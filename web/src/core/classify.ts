@@ -81,16 +81,6 @@ export function inferCategory(description: string, type: TransactionType): Categ
   return '其他'
 }
 
-/** Extract a merchant-ish label from a raw bank description. */
-export function extractMerchant(description: string): string {
-  const text = (description ?? '').trim()
-  if (!text) return ''
-  const withoutPrefix = text.replace(/^(消费|取现|还款|退款|退货|返现|手续费|利息|调整|刷卡金)\s*/, '')
-  const parts = withoutPrefix.split(/[-–—:：]/).filter(Boolean)
-  const candidate = parts.length > 1 ? parts.slice(1).join('-') : withoutPrefix
-  return candidate.length > 40 ? candidate.slice(0, 40) : candidate
-}
-
 export function signForDirection(minor: number, direction: Direction): number {
   return direction === 'debit' ? Math.abs(minor) : -Math.abs(minor)
 }

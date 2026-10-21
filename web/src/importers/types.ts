@@ -48,7 +48,6 @@ export interface NormalizedLegacyRow {
   postingDate: IsoDate | null
   description: string
   rawDescription: string
-  merchant: string
   transactionCurrency: string
   transactionAmountMinor: number
   settlementCurrency: string

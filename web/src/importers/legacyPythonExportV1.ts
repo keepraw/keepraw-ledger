@@ -1,4 +1,4 @@
-import { extractMerchant, inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
+import { inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
 import { type IsoDate, parseDateInput } from '../core/dates'
 import { isSupportedCurrency, parseAmountToMinor } from '../core/money'
 import type { BankId, ReviewFlag } from '../core/types'
@@ -244,7 +244,6 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
       postingDate,
       description: rawDescription,
       rawDescription,
-      merchant: extractMerchant(rawDescription),
       transactionCurrency,
       transactionAmountMinor,
       settlementCurrency,

@@ -28,7 +28,6 @@ function syntheticTransaction(overrides: Partial<Transaction> & { id: string }):
     postingDate: '2024-01-06',
     description: '消费 合成商户',
     rawDescription: '消费 合成商户',
-    merchant: '合成商户',
     transactionCurrency: 'CNY',
     transactionAmountMinor: 12880,
     settlementCurrency: 'CNY',

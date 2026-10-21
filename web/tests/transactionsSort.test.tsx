@@ -57,8 +57,8 @@ describe('AUD-007 amount ordering', () => {
 
 it('composes date, bank, card, type, review and all text search fields before pagination', () => {
   const selected = Array.from({ length: 55 }, (_, index) => row(`selected-${index}`, index, {
-    bank: 'boc', cardLast4: '1234', type: 'purchase', description: `Coffee ${index}`,
-    merchant: '独立商户', transactionDate: '2025-02-10', reviewStatus: 'confirmed',
+    bank: 'boc', cardLast4: '1234', type: 'purchase', description: `Coffee ${index}`, rawDescription: `原文检索 ${index}`,
+    transactionDate: '2025-02-10', reviewStatus: 'confirmed',
   }))
   app.visibleTransactions = [...selected,
     row('bank-excluded', 1, { bank: 'icbc', cardLast4: '1234', transactionDate: '2025-02-10' }),
@@ -74,7 +74,7 @@ it('composes date, bank, card, type, review and all text search fields before pa
   const dates = container.querySelectorAll('input[type="date"]')
   fireEvent.change(dates[0]!, { target: { value: '2025-02-01' } })
   fireEvent.change(dates[1]!, { target: { value: '2025-02-28' } })
-  for (const text of ['  COFFEE  ', '独立商户', '1234', '中国银行']) {
+  for (const text of ['  COFFEE  ', '原文检索', '1234', '中国银行']) {
     fireEvent.change(screen.getByTestId('transaction-search'), { target: { value: text } })
     expect(ids()).toHaveLength(50)
     expect(screen.getByText(/第 1 \/ 2 页 · 共 55 笔/)).toBeInTheDocument()

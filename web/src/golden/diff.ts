@@ -4,7 +4,7 @@
  * Canonical rule set, mirrored in `src/ccparser/golden.py::diff_normalized`:
  * P0 amount/direction/currency/date/count/scope -> BLOCKING,
  * P1 description (+ identity incompatibility, reported once in `identity`) -> WARNING,
- * P2 merchant/category/flags/summary are Web-only and never compared -> INFO (count 0).
+ * P2 category/flags/summary are Web-only and never compared -> INFO (count 0).
  */
 
 import { alignTransactions, buildIdentityEntries } from './identityReport'

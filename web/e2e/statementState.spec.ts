@@ -22,7 +22,10 @@ test('excluding one 128.80 row publishes a reconciled statement immediately and 
   await seed(page, 2)
   await page.goto('/#/review')
   await page.getByRole('button', { name: /交易复核/ }).click()
-  await page.getByTestId('review-table').locator('tbody tr').filter({ hasText: '消费 合成商户1' }).getByRole('button', { name: '排除' }).click()
+  const target = page.getByTestId('review-table').locator('tbody tr').filter({ has: page.locator('td[title="消费 合成商户1"]') })
+  await expect(target).toContainText('合成商户1')
+  await expect(target).not.toContainText('消费 合成商户1')
+  await target.getByRole('button', { name: '排除' }).click()
   // Same mounted Provider: verifies the committed statement reaches React too.
   await page.getByRole('button', { name: /账单对账/ }).click()
   await expect(page.getByText('所有账单都已通过对账')).toBeVisible()

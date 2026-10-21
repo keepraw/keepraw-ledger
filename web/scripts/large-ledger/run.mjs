@@ -242,7 +242,7 @@ async function migrationCase(count, control = false) {
         checks.push(await verified(target.page, jsonName, expectedExtras, 'migration', true))
       }
       const upgraded = await call(target.page, 'upgradeVersion', false)
-      assert.equal(upgraded.schema.version, 30)
+      assert.equal(upgraded.schema.version, 40)
       assert.equal(upgraded.schema.indexes.reduce((sum, table) => sum + table.indexes.length, 0), 1)
       checks.push(await verified(target.page, jsonName, expectedExtras, 'migration', true))
       const afterSamples = await call(target.page, 'databaseSamples', 3), reopens = []

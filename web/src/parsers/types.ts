@@ -49,7 +49,6 @@ export interface ParsedTransaction {
   postingDate: IsoDate | null
   rawDescription: string
   description: string
-  merchant: string
   transactionCurrency: string
   /** Signed minor units: positive = expense, negative = credit. */
   transactionAmountMinor: number

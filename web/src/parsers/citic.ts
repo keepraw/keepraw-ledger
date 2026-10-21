@@ -1,5 +1,6 @@
+import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { extractMerchant, classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -298,9 +299,7 @@ export function parseCombinedAmount(cell: string): CombinedAmount | null {
 }
 
 export function cleanDescription(text: string): string {
-  let value = (text ?? '').replace(/[\u00a0\u3000]/g, ' ').replace(/\s+/g, ' ').trim()
-  value = value.replace(/\s*\/\s*$/, '').trim()
-  return value
+  return cleanSourceDescription(text, 'citic')
 }
 
 export function extractBankToken(description: string): string {
@@ -365,7 +364,6 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     postingDate: postingDate ?? transactionDate,
     rawDescription,
     description,
-    merchant: extractMerchant(description),
     transactionCurrency,
     transactionAmountMinor,
     settlementCurrency: primary.currency,

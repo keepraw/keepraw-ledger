@@ -1,3 +1,4 @@
+import { matchesTransactionDescription } from '../../src/core/descriptionNormalizer'
 import { useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AppProvider, useApp } from '../../src/app/AppStore'
@@ -81,8 +82,8 @@ async function metrics() {
     const counts: Record<string, number> = {}; for (const tx of txs) { const value = String(tx[key]); counts[value] = (counts[value] ?? 0) + 1 } return counts
   }
   const counterfactuals = Object.fromEntries([
-    ['rawDescription'], ['rawText'], ['merchant'], ['sourceFileName', 'sourceFileHash'],
-    ['rawDescription', 'merchant'], ['rawDescription', 'rawText', 'merchant', 'sourceFileName', 'sourceFileHash'],
+    ['rawDescription'], ['rawText'], ['sourceFileName', 'sourceFileHash'],
+    ['rawDescription', 'rawText', 'sourceFileName', 'sourceFileHash'],
   ].map(keys => {
     // Serialization-only copies. No production object or stored row is altered.
     const bytes = byteSize(txs.map(tx => Object.fromEntries(Object.entries(tx).filter(([key]) => !keys.includes(key)))))
@@ -90,7 +91,7 @@ async function metrics() {
   }))
   return { tables, fields, indexes, counterfactuals, totalRecordsJsonBytes: Object.values(tables).reduce((sum, t) => sum + t.jsonBytes, 0),
     transactionObjectJsonBytes: txs.reduce((sum, tx) => sum + byteSize(tx), 0),
-    equalities: { descriptionRawDescription: eq('description', 'rawDescription'), descriptionRawText: eq('description', 'rawText'), descriptionMerchant: eq('description', 'merchant') },
+    equalities: { descriptionRawDescription: eq('description', 'rawDescription'), descriptionRawText: eq('description', 'rawText') },
     distribution: { banks: countBy('bank'), types: countBy('type'), currencies: countBy('transactionCurrency'), flags: txs.filter(tx => tx.flags.length > 0).length,
       repeatedOccurrences: txs.filter(tx => tx.occurrence > 1).length, uniqueIds: new Set(txs.map(tx => tx.id)).size,
       crossCurrency: txs.filter(tx => tx.transactionCurrency !== tx.settlementCurrency).length, negative: txs.filter(tx => tx.settlementAmountMinor < 0).length },
@@ -136,13 +137,13 @@ async function performanceSamples(repeats: number) {
       return String(left).localeCompare(String(right)) * -1
     }); const dateSortMs = now() - start
     start = now(); const selected = applyFilters(snapshot.transactions, { ...DEFAULT_FILTERS, banks: ['boc'], from: '2023-01-01', to: '2025-12-31' }).filter(tx =>
-      tx.description.toLowerCase().includes('咖啡') || tx.merchant.toLowerCase().includes('咖啡') || tx.cardLast4.includes('咖啡') || bankName(tx.bank).includes('咖啡'))
+      matchesTransactionDescription(tx, '咖啡') || tx.cardLast4.includes('咖啡') || bankName(tx.bank).includes('咖啡'))
     const filteredSearchMs = now() - start
     start = now(); if (productionSort) productionSort(snapshot.transactions, 'description', 'asc')
     else [...snapshot.transactions].sort((a, b) => a.description === b.description ? (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '') : String(a.description).localeCompare(String(b.description)))
     const descriptionSortMs = now() - start
     start = now(); const searched = snapshot.transactions.filter(tx =>
-      tx.description.toLowerCase().includes('咖啡') || tx.merchant.toLowerCase().includes('咖啡') || tx.cardLast4.includes('咖啡') || bankName(tx.bank).includes('咖啡'))
+      matchesTransactionDescription(tx, '咖啡') || tx.cardLast4.includes('咖啡') || bankName(tx.bank).includes('咖啡'))
     const searchAllMs = now() - start
     start = now(); const payload = await repository.exportDataBackup(); const backupReadMs = now() - start
     start = now(); const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }); const backupEncodeBlobMs = now() - start

@@ -184,7 +184,6 @@ function makeTransaction(input: {
     postingDate: input.postingDate,
     rawDescription: input.description,
     description: input.description,
-    merchant: input.description.replace(/^\S+\s*/, ''),
     transactionCurrency: 'CNY',
     transactionAmountMinor: signed,
     settlementCurrency: 'CNY',

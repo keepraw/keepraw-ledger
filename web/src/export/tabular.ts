@@ -1,3 +1,4 @@
+import { transactionDisplayDescription } from '../core/descriptionNormalizer'
 /**
  * CSV export.
  *
@@ -30,6 +31,7 @@ export const EXPORT_COLUMNS = [
   { key: 'id', header: '交易标识' },
   { key: 'fingerprint', header: '业务指纹' },
   { key: 'occurrence', header: '重复序号' },
+  { key: 'rawDescription', header: '原始描述' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -45,7 +47,7 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.cardLast4,
     transaction.transactionDate ?? '',
     transaction.postingDate ?? '',
-    transaction.description,
+    transactionDisplayDescription(transaction),
     transaction.transactionCurrency,
     minorToDecimalString(transaction.transactionAmountMinor, transaction.transactionCurrency),
     transaction.settlementCurrency,
@@ -61,6 +63,7 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.id,
     transaction.fingerprint,
     String(transaction.occurrence),
+    transaction.rawDescription,
   ]
 }
 

@@ -124,6 +124,12 @@ IndexedDB data is isolated by browser profile and site origin:
 
 A full archive reports missing original documents in its manifest rather than inventing them. Both formats contain sensitive financial data and are **not encrypted by the application**. Protect downloaded backups accordingly. V2 exports preserve independent free-text review notes across devices; V1 files cannot restore notes that were never exported (V1 restores keep existing local notes unchanged).
 
+Database v4 removes the retired standalone `merchant` property from existing
+transactions in one atomic upgrade, preserving every other field and transaction
+identity. Transaction details use `description`, with `rawDescription` retaining
+the source. Historical V1/V2 JSON and ZIP backups remain readable: restoration
+discards only the retired field, and new backups omit it.
+
 Backup restoration merges records by primary key; importing the same backup again does not create a new copy of the same records. Existing matching records retain their metadata; conflicting financial fields or conflicting note content abort restoration instead of overwriting. Keep a separate backup before any restoration or migration. XLSX/CSV archives include transaction IDs, fingerprints and occurrence numbers for independent inspection; use JSON to restore the application state.
 
 ### Data deletion and browser storage limitations

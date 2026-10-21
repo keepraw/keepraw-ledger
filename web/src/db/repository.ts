@@ -1,3 +1,4 @@
+import { withoutLegacyMerchant } from './transactionRecord'
 import type { ExistingSnapshot, IngestResult } from '../core/ingest'
 import type { Table } from 'dexie'
 import type { ImportRecord, Statement, Transaction } from '../core/types'
@@ -98,7 +99,7 @@ export async function persistImportResults(results: IngestResult[], expectedRevi
       await db.statements.put(current && existingBankTotal && !incomingBankTotal ? current : result.statement)
       // Existing rows may have been edited since parsing. Never write them back.
       const insertedIds = new Set(result.inserted.map((tx) => tx.id))
-      await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)))
+      await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)).map(withoutLegacyMerchant))
     }
     await rebuildStatementStates(results.flatMap(result => result.statement ? [result.statement.id] : []))
     await bumpLedgerRevision()
@@ -123,7 +124,7 @@ export async function persistLegacyImport(plan: {
       if (!await db.statements.get(statement.id)) await db.statements.add(statement)
     }
     for (let offset = 0; offset < plan.inserted.length; offset += 2000) {
-      await db.transactions.bulkAdd(plan.inserted.slice(offset, offset + 2000))
+      await db.transactions.bulkAdd(plan.inserted.slice(offset, offset + 2000).map(withoutLegacyMerchant))
     }
     await rebuildStatementStates([...plan.statements.map(row => row.id), ...plan.inserted.map(row => row.statementId)])
     await bumpLedgerRevision()
@@ -144,7 +145,7 @@ export async function patchTransactionWithStatements(patch: Partial<Transaction>
   return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
     const current = await db.transactions.get(ownedPatch.id)
     if (!current) return undefined
-    const next = { ...current, ...ownedPatch }
+    const next = withoutLegacyMerchant({ ...current, ...ownedPatch })
     await db.transactions.put(next)
     if (next.isDemo) await db.settings.delete(DEMO_PURGE_KEY)
     const affectsReconciliation = (['statementId', 'transactionCurrency', 'transactionAmountMinor',
@@ -163,7 +164,7 @@ export async function updateTransaction(transaction: Transaction): Promise<void>
 export async function updateTransactions(transactions: Transaction[]): Promise<void> {
   await db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
     const prior = await db.transactions.bulkGet(transactions.map(row => row.id))
-    await db.transactions.bulkPut(transactions)
+    await db.transactions.bulkPut(transactions.map(withoutLegacyMerchant))
     if (transactions.some(row => row.isDemo)) await db.settings.delete(DEMO_PURGE_KEY)
     await rebuildStatementStates([...prior.flatMap(row => row ? [row.statementId] : []), ...transactions.map(row => row.statementId)])
     await bumpLedgerRevision()
@@ -232,7 +233,7 @@ export async function exportDataBackup(): Promise<BackupPayload> {
       .sort((a, b) => a.transactionId.localeCompare(b.transactionId))
       .map((row) => ({ transactionId: row.transactionId, note: row.note, updatedAt: row.updatedAt }))
     const payload: BackupPayloadV2 = { format: 'credit-card-data-backup', version: 2,
-      exportedAt: new Date().toISOString(), statements, transactions, imports, reviewNotes, settings: settings?.value ?? null }
+      exportedAt: new Date().toISOString(), statements, transactions: transactions.map(withoutLegacyMerchant), imports, reviewNotes, settings: settings?.value ?? null }
     if (!validateBackup(payload)) throw new Error('账本包含无效记录，拒绝生成不可恢复的备份')
     return payload
   })
@@ -252,6 +253,8 @@ async function backupRows<T>(table: Table<T, string>, ids: string[]): Promise<Ar
 /** Matching primary keys keep current metadata; financial or note conflicts abort. */
 export async function importBackup(payload: BackupPayload): Promise<void> {
   if (!validateBackup(payload)) throw new Error('备份包含无效记录，拒绝恢复')
+  // Old V1/V2 JSON and ZIP payloads may carry the retired field; never write it back.
+  payload = { ...payload, transactions: payload.transactions.map(withoutLegacyMerchant) }
   // V1 restores never touch reviewNotes: existing local notes stay unchanged.
   // V2 restores merge notes in the same atomic transaction as financial rows.
   const incomingNotes: ReviewNotePayload[] = payload.version === 2 ? payload.reviewNotes : []
