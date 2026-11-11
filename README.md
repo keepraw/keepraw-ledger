@@ -46,8 +46,31 @@ Historical XLSX migration runs entirely in the browser: **XLSX → TypeScript ad
 | `标准字段` | The complete 15-column snake_case export | `legacy-python-export-v1` |
 | `交易明细` | 银行 / 卡尾号 / 交易日 / 入账日 / 说明 / 交易币种 / 交易金额 / 结算币种 / 结算金额 | `legacy-keepraw-export-v1` |
 | `统一账单` | 银行名称 / 卡号 / 交易日期 / 入账日期 / 交易详情 / 交易币种 / 交易金额 / 入账币种 / 入账金额 | `legacy-unified-bill-v1` |
+| Native `交易明细` | Exact 20-column transaction export, or current 21-column export including 原始描述 | `legacy-keepraw-ledger-export-v1` |
 
 The `python` in the first adapter's identifier records a compatible historical file format; it does not invoke Python. These fixed schemas are not a general-purpose bank XLSX layout detector. See the [TypeScript historical migration workflow and validation](docs/typescript-historical-migration.md) for import, review, backup, recovery and identity boundaries.
+
+The fourth adapter imports the application's own **Transactions → Excel** export.
+It validates the complete native schema, fingerprint, ID and occurrence using the
+existing identity algorithm. Verified IDs and sparse occurrences survive a fresh
+browser import; same-ID financial conflicts block confirmation, and existing
+transactions and user metadata are never overwritten. Different native IDs with
+matching business fields remain separate and may require duplicate review.
+Both monetary legs, explicit type/direction, category, review status, source file
+name/hash/page and raw text are retained. The current exporter has **21 columns**;
+the older 20-column variant has no raw description. Lossy display descriptions
+that cannot validate the original fingerprint are excluded rather than given new
+IDs. Confidence, review flags, original source-row numbers, statement periods,
+review notes and original provenance markers are absent from these exports and
+cannot be restored. Imported confidence is 0 with a `low_confidence` flag; the
+exported review status is retained unless duplicate review is required.
+
+This native adapter provides partial transaction recovery. Arbitrary XLSX files
+and the separate Settings **XLSX archive** (human sheet + Technical Metadata) are
+not application backups or accepted native schemas. Use JSON V2 backup/restore
+for full financial records, settings, import history and independent review notes;
+JSON contains no original source attachments. See the migration documentation for
+exact columns and limitations.
 
 Python retirement and its migration evidence are recorded in [the readiness audit](docs/python-retirement-readiness.md).
 The Web migration workflow supports `legacy-python-export-v1` (`标准字段`),
