@@ -88,7 +88,9 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
     const fingerprint = text(cells[18])
     const occurrence = positiveInteger(cells[19])
     const rawDescription = width === 21 ? text(cells[20]) : displayed
-    if (width === 21 && !rawDescription.trim()) { fail('missing_field', '原始描述缺失'); continue }
+    if (width === 21 && !blank(cells[20]) && typeof cells[20] !== 'string') {
+      fail('invalid_field', '原始描述必须是文本'); continue
+    }
     // Display descriptions can remove action/channel tokens. Only use known
     // source cleanup candidates, and verify BOTH the fingerprint and display.
     // This reuses the existing identity algorithm; no new identity is invented.

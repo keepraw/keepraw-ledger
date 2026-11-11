@@ -90,8 +90,9 @@ export async function previewLegacyWorkbook(
   const duplicateIds = comparison?.duplicateIds ?? duplicates.duplicateIds
   const identityWarnings = comparison?.warnings ?? []
   if (native) {
+    const blockedRows = new Set(identityWarnings.filter(issue => issue.blocking).map(issue => issue.rowNumber))
     for (const row of rows) {
-      if (!duplicateIds.has(row.id) && (duplicates.duplicateIds.has(row.id) || duplicates.suspectedDuplicates.has(row.id))) {
+      if (!blockedRows.has(row.sourceRow) && !duplicateIds.has(row.id) && (duplicates.duplicateIds.has(row.id) || duplicates.suspectedDuplicates.has(row.id))) {
         identityWarnings.push({ rowNumber: row.sourceRow, blocking: false, detail: `相近业务字段使用不同身份，保留并标记待复核：${row.id}` })
       }
     }

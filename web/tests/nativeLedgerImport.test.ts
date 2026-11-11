@@ -93,6 +93,16 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     }
   })
 
+  it('preserves an intentionally empty raw description when the exported identity still verifies', async () => {
+    const tx = nativeTransaction(1, { rawDescription: '' })
+    const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+    expect(result.anomalies).toEqual([])
+    expect(planLegacyImport(result, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: tx.id,
+      description: tx.description, rawDescription: '' })
+    const invalid: unknown[] = transactionToRow(tx); invalid[20] = 123
+    expect((await preview([invalid], [...NATIVE_HEADERS, '原始描述'])).anomalies[0]!.kind).toBe('invalid_field')
+  })
+
   it('reports unrecoverable display identity in 20 columns instead of generating replacement IDs', async () => {
     const tx = nativeTransaction(1, { description: '消费 Synthetic Store', rawDescription: '消费 Synthetic Store' })
     const old = transactionToRow(tx).slice(0, 20)
@@ -198,6 +208,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     const existing = { ...EMPTY_SNAPSHOT, imports: [current.record], transactions: [changed] }
     const next = await previewLegacyWorkbook(nativeWorkbook(), meta, existing)
     expect(next.stats).toMatchObject({ duplicateFile: true, alreadyStored: 0 })
+    expect(next.identityWarnings?.filter(warning => warning.rowNumber === 2)).toHaveLength(1)
     expect(next.identityWarnings?.some(warning => warning.blocking)).toBe(true)
     expect(() => planLegacyImport(first, existing)).toThrow(/交易标识冲突/)
   })

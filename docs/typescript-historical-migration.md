@@ -241,21 +241,21 @@ specifications and `package-lock.json` remain unchanged.
 an isolated `PLAYWRIGHT_BROWSERS_PATH`, rather than Playwright's requested Chromium
 156 build. Runtime: Node **24.19.0**, npm **11.9.0**, Playwright **1.64.0**. CI uses
 Node 22 and must still validate the official locked package and bundled browser.
-The PR remains a draft pending that verification.
+These local results alone do not establish official locked-package/bundled-browser validation.
 
 | Command from `web/` | Final local result | Elapsed |
 | --- | --- | --- |
-| `npm run typecheck` | Exit 0 | 5.60 s |
-| `npm run lint` | Exit 0; 0 errors, 2 existing `no-console` warnings in `scripts/generate-golden.ts` | 3.75 s |
-| `npm test` | Exit 0; 968 passed, 6 private-fixture tests skipped; 59 files passed, 1 skipped | 27.89 s |
-| `npm run build` | Exit 0 | 8.54 s |
-| `npm run test:migration` | Exit 0; 53 unit tests and 4 browser tests passed | 25.39 s |
-| `npx playwright install chromium` (installed CLI, `--no-install`) | Exit 1; network policy denied browser download | 2.66 s |
-| `npm run test:e2e` | Exit 0; development: 52 passed / 2 private-fixture tests skipped; production CSP: 3 passed | 136.80 s |
+| `npm run typecheck` | Exit 0 | 5.91 s |
+| `npm run lint` | Exit 0; 0 errors, 2 existing `no-console` warnings in `scripts/generate-golden.ts` | 3.87 s |
+| `npm test` | Exit 0; 969 passed, 6 private-fixture tests skipped; 59 files passed, 1 skipped | 28.45 s |
+| `npm run build` | Exit 0 | 8.77 s |
+| `npm run test:migration` | Exit 0; 54 unit tests and 4 browser tests passed | 24.43 s |
+| `npx playwright install chromium` (installed CLI, `--no-install`) | Exit 1; network policy denied browser download | 4.19 s |
+| `npm run test:e2e` | Exit 0; development: 52 passed / 2 private-fixture tests skipped; production CSP: 3 passed | 129.98 s |
 
-The native suite contains 50 tests. A separate final-code large-workbook run
+The native suite contains 51 tests. A separate final-code large-workbook run
 passed with **18,286 distinct occurrence IDs**, exact persistence and zero new
-rows on replanning: **6.04 s**, **223.1 MiB RSS increase**, **992.1 MiB process peak
+rows on replanning: **6.81 s**, **219.2 MiB RSS increase**, **992.4 MiB process peak
 RSS**. The process peak includes the XLSX runtime and fake-IndexedDB test harness;
 it is not workbook-only memory. The regression limits are 45 seconds and 1 GiB
 RSS growth, not a guarantee for other devices. All fixture data is invented; no
@@ -266,6 +266,10 @@ and a navigation abort. Replacing it with the normal physical `web/node_modules`
 layout resolved the problem: all 7 affected PDF/attachment browser tests passed,
 followed by the full successful run above. No bank parser was changed. The native
 E2E test also explicitly disables Demo Mode in its fresh browser before import.
+Intentionally empty raw descriptions are retained when the identity still verifies;
+a same-ID conflict produces one blocking warning rather than a misleading second
+warning about different IDs. These final cases were rechecked with the full unit
+suite and the migration browser workflow.
 
 Original IDs can be safely retained when the ID/fingerprint/occurrence relationship
 and recoverable business fields validate. Unverifiable identity rows are excluded;
