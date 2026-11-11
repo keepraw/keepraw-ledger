@@ -17,12 +17,14 @@ import type { BankId, Category, Direction, TransactionType } from '../core/types
 export const LEGACY_PYTHON_EXPORT_V1 = 'legacy-python-export-v1' as const
 export const LEGACY_KEEPRAW_EXPORT_V1 = 'legacy-keepraw-export-v1' as const
 export const LEGACY_UNIFIED_BILL_V1 = 'legacy-unified-bill-v1' as const
-export type LegacyFormatId = typeof LEGACY_PYTHON_EXPORT_V1 | typeof LEGACY_KEEPRAW_EXPORT_V1 | typeof LEGACY_UNIFIED_BILL_V1
+export const LEGACY_KEEPRAW_LEDGER_EXPORT_V1 = 'legacy-keepraw-ledger-export-v1' as const
+export type LegacyFormatId = typeof LEGACY_PYTHON_EXPORT_V1 | typeof LEGACY_KEEPRAW_EXPORT_V1 | typeof LEGACY_UNIFIED_BILL_V1 | typeof LEGACY_KEEPRAW_LEDGER_EXPORT_V1
 
 export const LEGACY_FORMAT_NAME: Record<LegacyFormatId, string> = {
   [LEGACY_PYTHON_EXPORT_V1]: '标准字段历史格式',
   [LEGACY_KEEPRAW_EXPORT_V1]: 'Keepraw History Export',
   [LEGACY_UNIFIED_BILL_V1]: '统一账单历史格式',
+  [LEGACY_KEEPRAW_LEDGER_EXPORT_V1]: 'Keepraw-Ledger 原生交易导出',
 }
 
 export interface LegacyFileMeta {
@@ -31,7 +33,7 @@ export interface LegacyFileMeta {
   fileHash: string
 }
 
-export type LegacyAnomalyKind = 'missing_field' | 'date_unparseable' | 'amount_unparseable'
+export type LegacyAnomalyKind = 'missing_field' | 'date_unparseable' | 'amount_unparseable' | 'invalid_field' | 'identity_conflict'
 
 export interface LegacyAnomaly {
   /** 1-based Excel row number (header is row 1). */
@@ -40,7 +42,7 @@ export interface LegacyAnomaly {
   detail: string
 }
 
-/** One validated history row, mapped to standard units but not yet identified. */
+/** One validated migration row in standard units, optionally carrying native identity. */
 export interface NormalizedLegacyRow {
   bank: BankId
   cardLast4: string
@@ -62,6 +64,8 @@ export interface NormalizedLegacyRow {
   sourceRow: number
   cycleStart: IsoDate | null
   cycleEnd: IsoDate | null
+  /** Validated native identity and the metadata actually present in the XLSX. */
+  native?: Pick<import('../core/types').Transaction, 'id' | 'fingerprint' | 'occurrence' | 'reviewStatus' | 'sourceFileName' | 'sourceFileHash' | 'sourcePage'>
 }
 
 export interface LegacyPreviewStats {
@@ -71,13 +75,15 @@ export interface LegacyPreviewStats {
   totalRows: number
   validRows: number
   anomalyRows: number
-  anomaliesByKind: Record<LegacyAnomalyKind, number>
+  anomaliesByKind: Record<'missing_field' | 'date_unparseable' | 'amount_unparseable', number> &
+    Partial<Record<'invalid_field' | 'identity_conflict', number>>
   dateRange: { min: IsoDate; max: IsoDate } | null
   banks: BankId[]
-  /** Rows whose fingerprint already exists in storage (would be skipped). */
+  /** Rows safely recognized as already stored (would be skipped). */
   alreadyStored: number
   /** True when this exact file (SHA-256) was imported before. */
   duplicateFile: boolean
+  cards?: string[]
 }
 
 export interface LegacyPreview {
@@ -86,8 +92,9 @@ export interface LegacyPreview {
   /** Valid rows with stable ids assigned (deterministic per batch). */
   rows: Array<NormalizedLegacyRow & { id: string; fingerprint: string; occurrence: number }>
   anomalies: LegacyAnomaly[]
-  /** Valid rows retained unchanged but requiring explicit date review. */
+  /** Source-row date warnings and native reconstruction limitations. */
   reviewIssues?: Array<{ rowNumber: number; detail: string }>
   /** Read-only cross-source observations. Never an ID migration or merge plan. */
   migrationAudit?: import('../core/migrationAudit').MigrationAudit
+  identityWarnings?: Array<{ rowNumber: number; detail: string; blocking: boolean }>
 }

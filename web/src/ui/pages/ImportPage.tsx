@@ -160,13 +160,13 @@ export function ImportPage() {
         </div>
         <div className="card-pad stack">
           <p className="subtle">
-            仅接受三种明确格式：<span className="mono">unified_transactions.xlsx</span>（
+            接受三种历史格式及原生 Keepraw-Ledger 交易导出：<span className="mono">unified_transactions.xlsx</span>（
             <span className="mono">标准字段</span>表，格式 legacy-python-export-v1），或用户维护的{' '}
             <span className="mono">2026信用卡账单.xlsx</span>（<span className="mono">交易明细</span>表，
             银行 / 卡尾号 / 交易日 / 入账日 / 说明 / 交易币种 / 交易金额 / 结算币种 / 结算金额，
             格式 legacy-keepraw-export-v1），以及“统一账单”表（银行名称 / 卡号 / 交易日期 / 入账日期 /
             交易详情 / 交易币种 / 交易金额 / 入账币种 / 入账金额）。不符合任一格式的文件会被拒绝，
-            不会尝试猜测列含义。预览阶段只读不写，确认后一次性写入。
+            原生交易导出支持完整 20 列或含原始描述的 21 列（legacy-keepraw-ledger-export-v1）。不会尝试猜测列含义。预览阶段只读不写，确认后一次性写入。
           </p>
           <input
             ref={legacyInputRef}
@@ -219,17 +219,26 @@ export function ImportPage() {
                 ，涉及银行：
                 {legacyPreview.stats.banks.map((bank) => (bank === 'unknown' ? '未知' : bankName(bank))).join('、') || '—'}。
               </p>
+              {legacyPreview.stats.cards?.length ? <p>银行 / 卡尾号：{legacyPreview.stats.cards.join('、')}</p> : null}
+              {legacyPreview.identityWarnings?.length ? (
+                <div className="notice notice-warn" data-testid="legacy-identity-warnings">
+                  <div>身份或重复警告（冲突时拒绝整次导入）：</div>
+                  <ul>{legacyPreview.identityWarnings.map(issue => <li key={issue.rowNumber}>第 {issue.rowNumber} 行：{issue.detail}</li>)}</ul>
+                </div>
+              ) : null}
               {legacyPreview.stats.anomalyRows > 0 ? (
                 <p className="subtle" data-testid="legacy-preview-anomalies">
                   异常明细：必填缺失 {legacyPreview.stats.anomaliesByKind.missing_field} 行，
                   日期无法解析 {legacyPreview.stats.anomaliesByKind.date_unparseable} 行，
-                  金额无法解析 {legacyPreview.stats.anomaliesByKind.amount_unparseable} 行。
+                  金额无法解析 {legacyPreview.stats.anomaliesByKind.amount_unparseable} 行，
+                  字段无效 {legacyPreview.stats.anomaliesByKind.invalid_field ?? 0} 行，
+                  身份冲突 {legacyPreview.stats.anomaliesByKind.identity_conflict ?? 0} 行。
                   异常行不会被导入。
                 </p>
               ) : null}
               {(legacyPreview.reviewIssues?.length ?? 0) > 0 ? (
                 <div className="notice notice-warn">
-                  <div>发现未来日期，原值保留，不自动改年份：</div>
+                  <div>{legacyPreview.stats.formatId === 'legacy-keepraw-ledger-export-v1' ? '导入复核提示（原值保留）：' : '发现未来日期，原值保留，不自动改年份：'}</div>
                   <ul>{legacyPreview.reviewIssues!.map((issue) => <li key={issue.rowNumber}>第 {issue.rowNumber} 行：{issue.detail}</li>)}</ul>
                 </div>
               ) : null}
@@ -259,7 +268,7 @@ export function ImportPage() {
                 <button
                   className="btn btn-primary"
                   type="button"
-                  disabled={legacyBusy}
+                  disabled={legacyBusy || legacyPreview.identityWarnings?.some(issue => issue.blocking)}
                   data-testid="legacy-confirm"
                   onClick={() => void handleLegacyConfirm()}
                 >

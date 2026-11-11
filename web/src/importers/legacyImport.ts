@@ -7,10 +7,11 @@ import type { ImportRecord, Statement, Transaction } from '../core/types'
 import { emptySummary } from '../parsers/types'
 import { assertSourceFileSize, sha256Hex } from '../parsers/extract'
 import { LEGACY_STANDARD_SHEET, detectLegacyShape, parseLegacyRows } from './legacyPythonExportV1'
-import { LEGACY_KEEPRAW_SHEET, detectKeeprawShape, parseKeeprawRows } from './legacyKeeprawExportV1'
+import { detectKeeprawShape, parseKeeprawRows } from './legacyKeeprawExportV1'
 import { LEGACY_UNIFIED_BILL_SHEET, detectUnifiedBillShape, parseUnifiedBillRows } from './legacyUnifiedBillV1'
 import {
   LEGACY_KEEPRAW_EXPORT_V1,
+  LEGACY_KEEPRAW_LEDGER_EXPORT_V1,
   LEGACY_PYTHON_EXPORT_V1,
   LEGACY_UNIFIED_BILL_V1,
   LEGACY_FORMAT_NAME,
@@ -21,6 +22,7 @@ import {
   type NormalizedLegacyRow,
 } from './types'
 import { readSheetData } from './workbook'
+import { compareNativeLedgerRows, detectNativeLedgerShape, NATIVE_LEDGER_SHEET, parseNativeLedgerRows } from './legacyKeeprawLedgerExportV1'
 
 export const LEGACY_ADAPTER_VERSION = '1.0.0'
 export const LEGACY_IMPORT_BATCH = 2000
@@ -61,6 +63,7 @@ function fingerprintOf(row: NormalizedLegacyRow): string {
  * - `legacy-python-export-v1` (`标准字段` sheet, snake_case columns)
  * - `legacy-keepraw-export-v1` (`交易明细` sheet, 银行/卡尾号/交易日/入账日/说明/交易币种/交易金额/结算币种/结算金额)
  * - `legacy-unified-bill-v1` (`统一账单` sheet, all nine historical columns)
+ * - `legacy-keepraw-ledger-export-v1` (exact native 20/21-column schema)
  */
 export async function previewLegacyWorkbook(
   buffer: ArrayBuffer,
@@ -71,33 +74,43 @@ export async function previewLegacyWorkbook(
   if (!detected) throw new LegacyFormatError()
   const { formatId, parsed } = detected
 
-  const fingerprints = parsed.rows.map(fingerprintOf)
+  const native = formatId === LEGACY_KEEPRAW_LEDGER_EXPORT_V1
+  const fingerprints = native ? [] : parsed.rows.map(fingerprintOf)
   const occurrences = assignOccurrences(fingerprints)
   const stored = existing.transactions.filter((tx) => !tx.isDemo)
-  const rows = assignStoredOccurrences(parsed.rows.map((row, index): PreviewRow => {
+  const identified = parsed.rows.map((row, index): PreviewRow => {
+    if (row.native) return { ...row, ...row.native }
     const fingerprint = fingerprints[index]!
     const occurrence = occurrences[index]!.occurrence
     return { ...row, id: transactionId(fingerprint, occurrence), fingerprint, occurrence }
-  }), stored)
-
-  const { duplicateIds } = detectDuplicates(
-    rows,
-    stored,
-  )
+  })
+  const rows = native ? identified : assignStoredOccurrences(identified, stored)
+  const comparison = native ? compareNativeLedgerRows(rows, stored) : null
+  const duplicates = detectDuplicates(rows, stored)
+  const duplicateIds = comparison?.duplicateIds ?? duplicates.duplicateIds
+  const identityWarnings = comparison?.warnings ?? []
+  if (native) {
+    for (const row of rows) {
+      if (!duplicateIds.has(row.id) && (duplicates.duplicateIds.has(row.id) || duplicates.suspectedDuplicates.has(row.id))) {
+        identityWarnings.push({ rowNumber: row.sourceRow, blocking: false, detail: `相近业务字段使用不同身份，保留并标记待复核：${row.id}` })
+      }
+    }
+  }
 
   const dates = rows
-    .map((row) => row.transactionDate)
+    .map((row) => row.transactionDate ?? row.postingDate)
     .filter((date): date is string => date !== null)
     .sort()
   const banks = [...new Set(rows.map((row) => row.bank))].sort()
   const duplicateFile = existing.imports.some((record) => record.fileHash === meta.fileHash && !record.isDemo &&
     record.status !== 'failed' && record.status !== 'unsupported')
-  const anomaliesByKind: Record<LegacyAnomaly['kind'], number> = {
+  const anomaliesByKind: LegacyPreview['stats']['anomaliesByKind'] = {
     missing_field: 0,
     date_unparseable: 0,
     amount_unparseable: 0,
+    ...(native ? { invalid_field: 0, identity_conflict: 0 } : {}),
   }
-  for (const anomaly of parsed.anomalies) anomaliesByKind[anomaly.kind] += 1
+  for (const anomaly of parsed.anomalies) anomaliesByKind[anomaly.kind] = (anomaliesByKind[anomaly.kind] ?? 0) + 1
 
   return {
     meta,
@@ -110,12 +123,14 @@ export async function previewLegacyWorkbook(
       anomaliesByKind,
       dateRange: dates.length > 0 ? { min: dates[0]!, max: dates[dates.length - 1]! } : null,
       banks,
-      alreadyStored: duplicateFile ? rows.length : rows.filter((row) => duplicateIds.has(row.id)).length,
+      cards: [...new Set(rows.map(row => `${row.bank} / ${row.cardLast4}`))].sort(),
+      alreadyStored: duplicateFile && !native ? rows.length : rows.filter((row) => duplicateIds.has(row.id)).length,
       duplicateFile,
     },
     rows,
     anomalies: parsed.anomalies,
     reviewIssues: parsed.reviewIssues ?? [],
+    identityWarnings,
     migrationAudit: auditMigrationRows(rows, stored),
   }
 }
@@ -128,6 +143,23 @@ export async function previewLegacyWorkbook(
 async function detectLegacyAdapter(
   buffer: ArrayBuffer,
 ): Promise<{ formatId: LegacyFormatId; parsed: { rows: NormalizedLegacyRow[]; anomalies: LegacyAnomaly[]; totalRows: number; reviewIssues?: LegacyPreview['reviewIssues'] } } | null> {
+  const nativeSheet = await readSheetData(buffer, NATIVE_LEDGER_SHEET)
+  if (nativeSheet.rows.length > 0) {
+    const header = nativeSheet.rows[0]!
+    const width = detectNativeLedgerShape(header)
+    if (width) {
+      // A native export never contains another recognized migration source.
+      for (const [name, detect] of [[LEGACY_STANDARD_SHEET, detectLegacyShape], [LEGACY_UNIFIED_BILL_SHEET, detectUnifiedBillShape]] as const) {
+        if (!nativeSheet.sheetNames.includes(name)) continue
+        const other = await readSheetData(buffer, name)
+        if (other.rows.length && detect(other.rows[0]!)) throw new LegacyFormatError('工作簿包含多个可识别的迁移来源，拒绝选择其中之一')
+      }
+      return { formatId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1, parsed: parseNativeLedgerRows(nativeSheet.rows.slice(1), width) }
+    }
+    if (header.some(cell => ['交易描述', '交易标识', '业务指纹', '重复序号', '原始描述'].includes(String(cell)))) {
+      throw new LegacyFormatError('原生交易导出表头不完整、顺序错误或存在冲突；仅接受完整 20/21 列 schema')
+    }
+  }
   const pythonSheet = await readSheetData(buffer, LEGACY_STANDARD_SHEET)
   if (pythonSheet.rows.length > 0) {
     const shape = detectLegacyShape(pythonSheet.rows[0] as unknown[])
@@ -139,7 +171,7 @@ async function detectLegacyAdapter(
     }
   }
 
-  const keeprawSheet = await readSheetData(buffer, LEGACY_KEEPRAW_SHEET)
+  const keeprawSheet = nativeSheet
   if (keeprawSheet.rows.length > 0) {
     const shape = detectKeeprawShape(keeprawSheet.rows[0] as unknown[])
     if (shape) {
@@ -176,8 +208,16 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
   const duplicateImport = existing.imports.find((record) => record.fileHash === preview.meta.fileHash && !record.isDemo &&
     record.status !== 'failed' && record.status !== 'unsupported')
   const stored = existing.transactions.filter((tx) => !tx.isDemo)
-  const rows = assignStoredOccurrences(preview.rows, stored)
-  const { duplicateIds, suspectedDuplicates } = detectDuplicates(rows, stored)
+  const native = preview.stats.formatId === LEGACY_KEEPRAW_LEDGER_EXPORT_V1
+  const rows = native ? preview.rows : assignStoredOccurrences(preview.rows, stored)
+  const comparison = native ? compareNativeLedgerRows(rows, stored) : null
+  if (comparison?.warnings.length) throw new LegacyFormatError(comparison.warnings.map(warning => warning.detail).join('；'))
+  const duplicates = detectDuplicates(rows, stored)
+  const duplicateIds = comparison?.duplicateIds ?? duplicates.duplicateIds
+  const suspectedDuplicates = duplicates.suspectedDuplicates
+  if (native) for (const row of rows) {
+    if (!duplicateIds.has(row.id) && duplicates.duplicateIds.has(row.id)) suspectedDuplicates.set(row.id, ['不同原生交易身份'])
+  }
   const fresh = duplicateImport ? [] : rows.filter((row) => !duplicateIds.has(row.id))
   const skipped = preview.rows.length - fresh.length
   const formatId: LegacyFormatId = preview.stats.formatId
@@ -201,10 +241,10 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     category: row.category,
     confidence: row.confidence,
     flags: suspectedDuplicates.has(row.id) ? [...row.flags, 'suspected_duplicate'] : [...row.flags],
-    reviewStatus: row.flags.length > 0 || suspectedDuplicates.has(row.id) ? 'pending' : 'ok',
-    sourceFileName: preview.meta.fileName,
-    sourceFileHash: preview.meta.fileHash,
-    sourcePage: null,
+    reviewStatus: suspectedDuplicates.has(row.id) ? 'pending' : row.native?.reviewStatus ?? (row.flags.length > 0 ? 'pending' : 'ok'),
+    sourceFileName: row.native?.sourceFileName ?? preview.meta.fileName,
+    sourceFileHash: row.native?.sourceFileHash ?? preview.meta.fileHash,
+    sourcePage: row.native?.sourcePage ?? null,
     sourceRow: row.sourceRow,
     rawText: row.rawText,
     fingerprint: row.fingerprint,
@@ -218,7 +258,7 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
   // rebuilt deterministically, so a repeat import reproduces identical rows
   // and the merge stays idempotent.
   const groups = new Map<string, PreviewRow[]>()
-  for (const row of rows) {
+  for (const row of native ? fresh : rows) {
     const key = statementKey(row.bank, row.cardLast4, row.cycleStart, row.cycleEnd)
     const bucket = groups.get(key) ?? []
     bucket.push(row)
@@ -265,7 +305,7 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
   const banks = [...new Set(preview.rows.map((row) => row.bank))]
   const cards = [...new Set(preview.rows.map((row) => row.cardLast4))]
   const dates = preview.rows
-    .map((row) => row.transactionDate)
+    .map((row) => row.transactionDate ?? row.postingDate)
     .filter((date): date is string => date !== null)
     .sort()
   const status = duplicateImport ? 'duplicate' : 'imported'
