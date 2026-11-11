@@ -253,7 +253,14 @@ export function ImportPage() {
                 <details><summary>查看排除行及原因</summary><ul>{legacyPreview.anomalies.map((issue) =>
                   <li key={issue.rowNumber}>第 {issue.rowNumber} 行：{issue.detail}</li>)}</ul></details>
               ) : null}
-              {legacyPreview.stats.duplicateFile ? (
+              {legacyPreview.stats.duplicateFile && legacyPreview.stats.formatId === 'legacy-keepraw-ledger-export-v1' &&
+                legacyPreview.stats.validRows > legacyPreview.stats.alreadyStored ? (
+                <div className="notice notice-warn" data-testid="legacy-incremental-recovery">
+                  <Badge tone="warn">增量恢复</Badge>
+                  <div>该原生文件此前已导入。已存在 {legacyPreview.stats.alreadyStored} 笔，
+                    本次可新增 {legacyPreview.stats.validRows - legacyPreview.stats.alreadyStored} 笔；现有交易及本地修改会保留，身份冲突时拒绝导入。</div>
+                </div>
+              ) : legacyPreview.stats.duplicateFile ? (
                 <div className="notice notice-warn">
                   <Badge tone="warn">重复文件</Badge>
                   <div>该文件此前已导入，确认后不会产生重复交易。</div>
@@ -272,7 +279,8 @@ export function ImportPage() {
                   data-testid="legacy-confirm"
                   onClick={() => void handleLegacyConfirm()}
                 >
-                  确认导入 {legacyPreview.stats.validRows} 笔
+                  确认导入 {legacyPreview.stats.formatId === 'legacy-keepraw-ledger-export-v1'
+                    ? legacyPreview.stats.validRows - legacyPreview.stats.alreadyStored : legacyPreview.stats.validRows} 笔
                 </button>
               </div>
             </div>

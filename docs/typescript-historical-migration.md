@@ -132,7 +132,12 @@ Excel row number. No currency conversion or fallback between monetary legs occur
 and channel tokens from the persisted identity description. The 21-column format
 allows known source cleanup candidates from `原始描述`; the adapter accepts a
 candidate only when both its exported display and existing `transactionFingerprint`
-match. The 20-column format can verify only the displayed description itself.
+match. The 20-column format uses the exported display text itself as the identity
+candidate and requires its fingerprint and ID to match exactly. It does not
+require another display conversion to return the same text: an older export
+may retain `消费 支付宝-联东U谷餐厅`, which another display conversion changes
+to `支付宝-联东U谷餐厅`. This does not invalidate a matching fingerprint.
+The 21-column raw-description and display checks remain strict.
 If no candidate validates, the row is excluded as an identity anomaly. Exact
 identity text cannot always be reconstructed: stale fingerprints after edits,
 lost display tokens without raw text, or text outside the known cleanup rules
@@ -157,6 +162,16 @@ confirmation plan, even if the file hash was already imported. The fresh snapsho
 is checked again at confirmation; Dexie's existing revision check and atomic
 `bulkAdd` workflow handle concurrent writes and roll back collisions.
 
+For native imports, an existing SHA-256 file hash does not skip the whole file.
+Every currently valid row is checked against stored IDs. A repeat file can add
+rows excluded by an older parser, skipping verified existing IDs and preserving
+their exact records and independent notes. Missing bank/card groups receive new
+statements; existing statement evidence is retained and derived counts update.
+The preview reports the existing and recoverable counts. An import that adds
+rows is recorded as an incremental recovery (`imported`, with no `duplicateOf`);
+a repeat file with no missing IDs is recorded as `duplicate`. The three historical
+adapters retain their whole-file SHA-256 duplicate protection.
+
 The preview shows format, source/valid/excluded rows, date range, bank/card suffixes,
 already-stored rows, excluded-row reasons and identity/duplicate warnings. Source
 filename/hash/page and raw text come from the exported row, while import history
@@ -178,6 +193,39 @@ and Technical Metadata schemas and is not accepted by this adapter. JSON V2
 backup/restore remains the full data-recovery contract; database schema and JSON
 format are unchanged.
 
+### Local real-workbook acceptance
+
+Synthetic CI tests do not establish acceptance of a private workbook. Keep the
+original XLSX and a JSON backup made after the original partial import locally.
+From `web`, run:
+
+```sh
+npm ci
+npm run native:recovery-audit -- --xlsx '/local/path/交易明细.xlsx' --backup '/local/path/partial-import-backup.json'
+```
+
+The command reads both files and restores the backup into isolated in-memory
+IndexedDB. It exercises the actual parser, planner, atomic persistence and repeat
+import without modifying either input or the browser's ledger. It prints only
+counts and verification booleans; no transaction content is uploaded or logged.
+Exit code 0 and `validation: "passed"` require these exact results:
+
+| Check | Required result |
+| --- | ---: |
+| Total / valid / excluded | 18,286 / 18,286 / 0 |
+| Same file hash already imported | true |
+| Already stored / newly inserted | 17,798 / 488 |
+| Remaining missing | 0 |
+| Existing transactions / notes unchanged | true / true |
+| Second import newly inserted | 0 |
+| Final stored workbook transaction IDs | 18,286 |
+
+Nonzero exit or `validation: "failed"` means acceptance did not pass. Use the
+printed observed counts to investigate locally. Other synthetic counts can be
+checked with `--expect-total`, `--expect-stored` and `--expect-new`. Do not commit
+the private inputs. Real-workbook results remain unverified until this command
+is run against the actual workbook and partial-import backup.
+
 ## Executed validation
 
 `web/tests/fixtures/historicalMigration.ts` creates independent invented XLSX
@@ -195,8 +243,10 @@ ID, occurrence and duplicate candidate relationship.
 contract, checks actual exporter output, preserves sparse occurrences, covers
 invalid financial/date/identity fields, repeated and repacked files, fresh database
 restoration, existing-ID conflicts, concurrent writes and full atomic rollback.
-Its 18,286-row synthetic XLSX test checks unique identities, persistence, idempotent
-replanning, a generous 45-second regression bound and a 1 GiB RSS-growth budget.
+Its 18,286-row synthetic XLSX test seeds 17,798 stored rows under the same file
+hash, recovers exactly 488 newly valid rows, verifies existing records remain
+unchanged, and checks zero missing IDs and zero new rows on repeat. It retains
+a generous 45-second regression bound and a 1 GiB RSS-growth budget.
 It reports elapsed time, RSS growth and process peak RSS; these are environment-specific
 regression checks, not a universal performance or peak-memory guarantee. `web/e2e/nativeLedgerImport.spec.ts` exercises actual UI preview,
 excluded-row reporting, confirmation, repeat import, UI XLSX download, restoration
@@ -226,7 +276,7 @@ must not be committed, uploaded to CI or used as public test fixtures. This
 evidence covers the named schemas and tested layouts, not universal compatibility
 with every bank statement.
 
-## Native adapter validation — 2026-11-11
+## Original native adapter validation — 2026-11-11 (before recovery bugfix)
 
 Local results below are **provisional with respect to the pinned dependency and
 bundled browser**. `npm ci` failed with E403 because the environment blocks
@@ -277,3 +327,35 @@ existing-ID financial conflicts block confirmation. Missing confidence, review
 flags, original row numbers, statement relationships/periods, independent notes,
 original provenance markers and (in 20-column exports) raw description cannot be
 faithfully recovered. Use JSON V2 for those application records and metadata.
+
+## Native incremental-recovery bugfix validation — 2026-11-11
+
+These results supersede the pre-fix limitations above for the commands rerun here.
+The official `npm ci --include=dev` succeeded with the unchanged lockfile and
+official SheetJS 0.20.3 tarball. Playwright 1.64.0 installed and used its bundled
+Chromium 156.0.8078.4 (build 1248). Runtime: Node 24.19.0, npm 11.9.0.
+
+| Check | Local result |
+| --- | --- |
+| New regressions against the original parser/planner | 5 failed as expected |
+| `npm run verify` | Passed: typecheck, lint, 983 unit tests, production build |
+| Unit skips | 6 private-fixture tests; no real workbook supplied |
+| Lint warnings | 2 existing warnings in `scripts/generate-golden.ts` |
+| Migration unit coverage within the full suite | 61 native + 6 historical + 1 local-audit command tests passed |
+| Migration Chromium suite | 5 passed, including same-file incremental recovery and zero-insert repeat |
+| `npm run test:e2e` | 53 development + 3 production tests passed; 2 private-fixture skips |
+| `npm audit --audit-level=high` | Exit 0; 10 moderate findings in the unchanged dependencies |
+
+The synthetic 18,286-row regression restored the original partial-import baseline
+of 17,798 rows under the exact same workbook SHA-256, inserted exactly 488 verified
+missing IDs, left zero missing IDs and planned zero inserts on repeat. Existing
+transaction records were compared exactly after recovery. Smaller regressions
+also verify local metadata/notes, strict 21-column raw-description checks,
+new statement creation, atomic ID-collision rollback and all three historical
+adapters' unchanged whole-file duplicate behavior.
+
+`native:recovery-audit` was tested with synthetic XLSX/JSON inputs, including a
+failing baseline check. **The private workbook's acceptance results are still
+unverified.** Run the local command above with the actual 20-column workbook and
+the backup from its original partial import to obtain the exact real-file report.
+No private workbook, backup or transaction content was committed or uploaded.

@@ -10,6 +10,25 @@ import { MIGRATION_FORMATS, migrationFixture } from './fixtures/historicalMigrat
 beforeEach(async () => { await db.delete(); await db.open() })
 
 describe('TypeScript-only historical migration and recovery', () => {
+  it.each(MIGRATION_FORMATS)('$sheet: still skips a previously imported file even if some transactions are missing', async format => {
+    const { buffer } = migrationFixture(format)
+    const meta = { fileName: 'synthetic-history.xlsx', fileSize: buffer.byteLength, fileHash: await sha256Hex(buffer) }
+    const first = planLegacyImport(await previewLegacyWorkbook(buffer, meta, EMPTY_SNAPSHOT), EMPTY_SNAPSHOT)
+    await persistLegacyImport(first)
+    await db.transactions.delete(first.inserted[0]!.id)
+    const before = await readSnapshot()
+    const preview = await previewLegacyWorkbook(buffer, meta, before)
+    expect(preview.stats).toMatchObject({ duplicateFile: true, alreadyStored: 72 })
+    const repeated = planLegacyImport(preview, before)
+    expect(repeated.inserted).toEqual([])
+    expect(repeated.statements).toEqual([])
+    expect(repeated.skipped).toBe(72)
+    expect(repeated.record).toMatchObject({ status: 'duplicate', duplicateOf: first.record.id })
+    await persistLegacyImport(repeated)
+    expect((await readSnapshot()).transactions).toEqual(before.transactions)
+    expect((await readSnapshot()).statements).toEqual(before.statements)
+  })
+
   it.each(MIGRATION_FORMATS)('$sheet: migrates all six banks and restores identity, money and duplicate relationships', async (format) => {
     const { buffer, expected } = migrationFixture(format)
     const meta = { fileName: 'synthetic-history.xlsx', fileSize: buffer.byteLength, fileHash: await sha256Hex(buffer) }
