@@ -121,6 +121,8 @@ export interface Transaction {
   type: TransactionType
   direction: Direction
   category: Category
+  /** Parser confidence (0–1). Native XLSX history uses 0 for unavailable metadata;
+   * review tasks depend on flags/status, never this placeholder alone. */
   confidence: number
   flags: ReviewFlag[]
   reviewStatus: ReviewStatus

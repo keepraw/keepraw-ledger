@@ -34,7 +34,7 @@ for (const version of [1, 2]) {
     try {
       for (let open = 0; open < 3; open++) {
         await upgraded.open()
-        expect(upgraded.verno).toBe(4)
+        expect(upgraded.verno).toBe(5)
         expect(upgraded.tables.flatMap(table => table.schema.indexes.map(index => `${table.name}.${index.name}`))).toEqual(['transactions.statementId'])
         expect(await upgraded.transactions.toArray()).toEqual(rows)
         expect(await upgraded.statements.get(result.statement!.id)).toEqual(result.statement)

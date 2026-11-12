@@ -54,7 +54,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     const result = planLegacyImport(await preview(), EMPTY_SNAPSHOT)
     expect(result.inserted).toHaveLength(2)
     const { statementId: _statementId, confidence: _confidence, flags: _flags, sourceRow: _sourceRow, ...expected } = nativeTransaction()
-    expect(result.inserted[0]).toMatchObject({ ...expected, confidence: 0, flags: ['low_confidence'], sourceRow: 2,
+    expect(result.inserted[0]).toMatchObject({ ...expected, confidence: 0, flags: [], sourceRow: 2,
       origin: 'legacy_import', sourceId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1 })
     expect(result.inserted.map(row => row.occurrence)).toEqual([1, 3])
     expect(result.inserted[1]!.id).toBe(nativeTransaction(3).id)

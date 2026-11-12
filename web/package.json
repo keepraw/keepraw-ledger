@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test && playwright test --config playwright.production.config.ts",
-    "test:migration": "vitest run tests/historicalMigration.test.ts tests/nativeLedgerImport.test.ts tests/nativeRecoveryAudit.test.ts && playwright test e2e/historicalMigration.spec.ts e2e/nativeLedgerImport.spec.ts",
+    "test:migration": "vitest run tests/historicalMigration.test.ts tests/nativeLedgerImport.test.ts tests/nativeRecoveryAudit.test.ts tests/nativeConfidenceRepair.test.ts tests/nativeConfidenceReview.test.tsx && playwright test e2e/historicalMigration.spec.ts e2e/nativeLedgerImport.spec.ts e2e/nativeConfidenceRepair.spec.ts",
     "migration:audit": "node scripts/migration-audit.mjs",
     "native:recovery-audit": "node scripts/native-recovery-audit.mjs",
     "golden:generate": "node scripts/generate-golden.mjs",
