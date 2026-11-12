@@ -91,16 +91,17 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
     if (width === 21 && !blank(cells[20]) && typeof cells[20] !== 'string') {
       fail('invalid_field', '原始描述必须是文本'); continue
     }
-    // Display descriptions can remove action/channel tokens. Only use known
-    // source cleanup candidates, and verify BOTH the fingerprint and display.
-    // This reuses the existing identity algorithm; no new identity is invented.
+    // Older 20-column exports only retain the displayed identity candidate.
+    // Reapplying display normalization can change that text even though its
+    // fingerprint is valid. The 21-column raw-description recovery still
+    // requires BOTH fingerprint and display agreement.
     const candidates = width === 20 ? [displayed] : [
       cleanSourceDescription(rawDescription, bank), rawDescription.replace(/\s+/g, ' ').trim(), rawDescription, displayed,
     ]
     const financial = { bank, cardLast4, transactionDate, postingDate, transactionCurrency,
       transactionAmountMinor, settlementCurrency, settlementAmountMinor, type, direction }
     const description = candidates.find(description => transactionFingerprint({ ...financial, description }) === fingerprint &&
-      transactionDisplayDescription({ bank, description, rawDescription }) === displayed)
+      (width === 20 || transactionDisplayDescription({ bank, description, rawDescription }) === displayed))
     if (!/^[a-f0-9]{16}$/.test(fingerprint) || occurrence === null ||
       id !== transactionId(fingerprint, occurrence) || description === undefined) {
       fail('identity_conflict', '交易标识、业务指纹、重复序号或金融字段无法互相验证；显示描述可能已丢失身份文本'); continue

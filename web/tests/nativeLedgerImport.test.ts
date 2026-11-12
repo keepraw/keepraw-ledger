@@ -5,13 +5,14 @@ import { EXPORT_COLUMNS, transactionToRow } from '../src/export/tabular'
 import { transactionDisplayDescription } from '../src/core/descriptionNormalizer'
 import { BANKS, TRANSACTION_TYPES } from '../src/core/types'
 import { transactionId } from '../src/core/dedupe'
+import { sha256Hex } from '../src/parsers/extract'
 import { db } from '../src/db/db'
 import { persistLegacyImport, readImportSnapshot, readSnapshot } from '../src/db/repository'
 import { planLegacyImport, previewLegacyWorkbook } from '../src/importers/legacyImport'
 import { detectNativeLedgerShape } from '../src/importers/legacyKeeprawLedgerExportV1'
 import { LEGACY_KEEPRAW_LEDGER_EXPORT_V1 } from '../src/importers/types'
 import { EMPTY_SNAPSHOT } from './fixtures/identity'
-import { NATIVE_HEADERS, nativeCells, nativeTransaction, nativeWorkbook } from './fixtures/nativeLedger'
+import { NATIVE_DISPLAY_CASES, NATIVE_HEADERS, nativeCells, nativeDisplayCells, nativeTransaction, nativeWorkbook } from './fixtures/nativeLedger'
 
 const meta = { fileName: 'synthetic-native.xlsx', fileSize: 1, fileHash: 'synthetic-native-hash' }
 const preview = (rows?: unknown[][], headers?: string[]) => previewLegacyWorkbook(nativeWorkbook(rows, headers), meta, EMPTY_SNAPSHOT)
@@ -112,6 +113,32 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     expect(result.anomalies[0]!.kind).toBe('identity_conflict')
   })
 
+  it.each(NATIVE_DISPLAY_CASES)('accepts verified 20-column identity despite another display conversion: %s → %s', async (description, displayedAgain) => {
+    const tx = nativeTransaction(7, { description, rawDescription: description })
+    expect(transactionDisplayDescription(tx)).toBe(displayedAgain)
+    const row = nativeDisplayCells(description, 7)
+    const result = await preview([row])
+    expect(result.stats).toMatchObject({ totalRows: 1, validRows: 1, anomalyRows: 0 })
+    expect(result.anomalies).toEqual([])
+    expect(planLegacyImport(result, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({
+      id: tx.id, fingerprint: tx.fingerprint, occurrence: 7, description, rawDescription: description,
+    })
+  })
+
+  it.each(NATIVE_DISPLAY_CASES)('retains strict 21-column raw-description and display validation: %s', async description => {
+    const tx = nativeTransaction(7, { description, rawDescription: description })
+    const headers = [...NATIVE_HEADERS, '原始描述']
+    const valid = await preview([transactionToRow(tx)], headers)
+    expect(valid.stats).toMatchObject({ validRows: 1, anomalyRows: 0 })
+    expect(valid.rows[0]).toMatchObject({ id: tx.id, description, rawDescription: description })
+    // Fingerprint and ID still verify, but the raw text cannot produce this
+    // stale display value. Only the 20-column schema may omit that check.
+    const inconsistent = [...nativeDisplayCells(description, 7), description]
+    const invalid = await preview([inconsistent], headers)
+    expect(invalid.rows).toEqual([])
+    expect(invalid.anomalies[0]!.kind).toBe('identity_conflict')
+  })
+
   it.each(['', 'garbage', '1.001', '9007199254740999', 'USD 1.00', true, Infinity, 'NaN'])('rejects invalid money %s independently', async value => {
     for (const index of [6, 8]) {
       const row = nativeCells(); row[index] = value
@@ -186,6 +213,94 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     expect(after.statements).toEqual(before.statements)
   })
 
+  async function seedPartialImport() {
+    const cells = [nativeCells(1), nativeDisplayCells(), nativeCells(3)]
+    const buffer = nativeWorkbook(cells)
+    const fileMeta = { ...meta, fileSize: buffer.byteLength, fileHash: await sha256Hex(buffer) }
+    const full = await previewLegacyWorkbook(buffer, fileMeta, EMPTY_SNAPSHOT)
+    // Reproduce the old parser's partial result for these exact same bytes.
+    const oldRows = full.rows.filter(row => transactionDisplayDescription(row) === row.description)
+    expect(oldRows).toHaveLength(2)
+    await persistLegacyImport(planLegacyImport({ ...full, rows: oldRows,
+      stats: { ...full.stats, validRows: 2, anomalyRows: 1 },
+      anomalies: [{ rowNumber: 3, kind: 'identity_conflict', detail: 'Old display equality check' }],
+    }, EMPTY_SNAPSHOT))
+    const id = String(cells[0]![17])
+    await db.transactions.update(id, { category: '其他', reviewStatus: 'rejected', confidence: 1,
+      flags: [], rawDescription: 'Local raw description', rawText: 'Local source evidence', sourceRow: 99,
+      sourceFileName: 'local-source.txt', sourceFileHash: 'local-source-hash', sourcePage: 42 })
+    await db.reviewNotes.put({ transactionId: id, note: 'Local review note\n保留原文', updatedAt: '2024-02-01T00:00:00Z' })
+    return { buffer, fileMeta, missingId: String(cells[1]![17]), before: await readSnapshot() }
+  }
+
+  it('recovers only missing IDs from a partially imported identical file, preserves edits and notes, then inserts zero', async () => {
+    const { buffer, fileMeta, missingId, before } = await seedPartialImport()
+    const notes = await db.reviewNotes.toArray()
+    const next = await previewLegacyWorkbook(buffer, fileMeta, before)
+    expect(next.stats).toMatchObject({ duplicateFile: true, totalRows: 3, validRows: 3, anomalyRows: 0, alreadyStored: 2 })
+    const { revision } = await readImportSnapshot()
+    const plan = planLegacyImport(next, before)
+    expect(plan.inserted.map(row => row.id)).toEqual([missingId])
+    expect(plan.skipped).toBe(2)
+    expect(plan.record).toMatchObject({ status: 'imported', transactionCount: 1, duplicateOf: null })
+    expect(plan.record.message).toContain('增量恢复')
+    expect(plan.record.message).toContain('新增 1 笔，跳过 2 笔已存在')
+    expect(plan.statements).toHaveLength(1)
+    await persistLegacyImport(plan, revision)
+    const recovered = await readSnapshot()
+    expect(recovered.transactions).toHaveLength(3)
+    for (const tx of before.transactions) expect(await db.transactions.get(tx.id)).toEqual(tx)
+    expect(await db.reviewNotes.toArray()).toEqual(notes)
+    expect(recovered.statements[0]).toMatchObject({ ...before.statements[0], transactionCount: 3 })
+
+    const repeat = await previewLegacyWorkbook(buffer, fileMeta, recovered)
+    expect(repeat.stats).toMatchObject({ duplicateFile: true, alreadyStored: 3 })
+    const second = planLegacyImport(repeat, recovered)
+    expect(second.inserted).toEqual([])
+    expect(second.skipped).toBe(3)
+    expect(second.statements).toEqual([])
+    expect(second.record).toMatchObject({ status: 'duplicate', transactionCount: 0, duplicateOf: plan.record.id })
+    await persistLegacyImport(second)
+    expect((await readSnapshot()).transactions).toEqual(recovered.transactions)
+    expect((await readSnapshot()).statements).toEqual(recovered.statements)
+    expect(await db.reviewNotes.toArray()).toEqual(notes)
+  })
+
+  it('blocks conflicts in partially imported files at confirmation without inserting any missing rows', async () => {
+    const { buffer, fileMeta, before } = await seedPartialImport()
+    const next = await previewLegacyWorkbook(buffer, fileMeta, before)
+    await db.transactions.update(before.transactions[0]!.id, { transactionAmountMinor: 999 })
+    const conflicting = await readSnapshot()
+    expect(() => planLegacyImport(next, conflicting)).toThrow(/交易标识冲突/)
+    expect(await readSnapshot()).toEqual(conflicting)
+    const blocked = await previewLegacyWorkbook(buffer, fileMeta, conflicting)
+    expect(blocked.identityWarnings?.some(issue => issue.blocking)).toBe(true)
+  })
+
+  it('rolls back recovery, import history and statements if a missing ID collides after planning', async () => {
+    const { buffer, fileMeta, before } = await seedPartialImport()
+    const plan = planLegacyImport(await previewLegacyWorkbook(buffer, fileMeta, before), before)
+    await db.transactions.add({ ...plan.inserted[0]!, transactionAmountMinor: 999 })
+    const concurrent = await readSnapshot()
+    await expect(persistLegacyImport(plan)).rejects.toThrow()
+    expect(await readSnapshot()).toEqual(concurrent)
+  })
+
+  it('creates required statements when recovery reaches a bank/card excluded entirely in the original import', async () => {
+    const recoveredTx = nativeTransaction(1, { bank: 'icbc' })
+    const buffer = nativeWorkbook([nativeCells(), transactionToRow(recoveredTx).slice(0, 20)])
+    const full = await previewLegacyWorkbook(buffer, meta, EMPTY_SNAPSHOT)
+    await persistLegacyImport(planLegacyImport({ ...full, rows: full.rows.slice(0, 1) }, EMPTY_SNAPSHOT))
+    const existing = await readSnapshot()
+    const plan = planLegacyImport(await previewLegacyWorkbook(buffer, meta, existing), existing)
+    expect(plan.inserted.map(row => row.id)).toEqual([recoveredTx.id])
+    expect(plan.statements).toHaveLength(1)
+    await persistLegacyImport(plan)
+    const recovered = await readSnapshot()
+    expect(recovered.statements).toHaveLength(2)
+    expect(recovered.transactions.every(tx => recovered.statements.some(statement => statement.id === tx.statementId))).toBe(true)
+  })
+
   it('does not consume a different stored occurrence with matching business fields', async () => {
     const prior = planLegacyImport(await preview([nativeCells(1)]), EMPTY_SNAPSHOT)
     await persistLegacyImport(prior)
@@ -230,27 +345,41 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     expect(await db.transactions.count()).toBe(2)
   })
 
-  it('validates and persists 18,286 synthetic rows without collapsing repeats', async () => {
+  it('recovers 488 of 18,286 synthetic rows from the same partially imported file, then inserts zero', async () => {
     const count = 18_286
+    const alreadyStored = 17_798
     const rows = Array.from({ length: count }, (_, index) => {
-      const row = nativeCells()
+      const row = index < alreadyStored ? nativeCells() : nativeDisplayCells()
       row[17] = transactionId(String(row[18]), index + 1); row[19] = String(index + 1)
       return row
     })
     const memoryBefore = process.memoryUsage().rss
     const started = performance.now()
-    const result = await preview(rows)
-    const plan = planLegacyImport(result, EMPTY_SNAPSHOT)
+    const buffer = nativeWorkbook(rows)
+    const fileMeta = { ...meta, fileSize: buffer.byteLength, fileHash: await sha256Hex(buffer) }
+    const result = await previewLegacyWorkbook(buffer, fileMeta, EMPTY_SNAPSHOT)
+    const original = { ...result, rows: result.rows.slice(0, alreadyStored),
+      stats: { ...result.stats, validRows: alreadyStored, anomalyRows: count - alreadyStored } }
+    await persistLegacyImport(planLegacyImport(original, EMPTY_SNAPSHOT))
+    expect(await db.transactions.count()).toBe(alreadyStored)
+    const partial = await readSnapshot()
+    const fixed = await previewLegacyWorkbook(buffer, fileMeta, partial)
+    expect(fixed.stats).toMatchObject({ duplicateFile: true, alreadyStored })
+    const plan = planLegacyImport(fixed, partial)
     expect(result.stats).toMatchObject({ totalRows: count, validRows: count, anomalyRows: 0 })
-    expect(new Set(plan.inserted.map(row => row.id)).size).toBe(count)
-    expect(plan.inserted[count - 1]!.occurrence).toBe(count)
+    expect(new Set(plan.inserted.map(row => row.id)).size).toBe(488)
+    expect(plan.skipped).toBe(alreadyStored)
+    expect(plan.inserted[487]!.occurrence).toBe(count)
     await persistLegacyImport(plan)
     expect(await db.transactions.count()).toBe(count)
     const existing = await readSnapshot()
+    const byId = new Map(existing.transactions.map(tx => [tx.id, tx]))
+    expect(result.rows.filter(row => !byId.has(row.id))).toEqual([])
+    for (const tx of partial.transactions) expect(byId.get(tx.id)).toEqual(tx)
     expect(planLegacyImport(result, existing).inserted).toEqual([])
     const seconds = (performance.now() - started) / 1000
     const retainedGrowth = Math.max(0, process.memoryUsage().rss - memoryBefore)
-    console.info(`native XLSX: ${count} rows, parse/plan/persist/replan ${seconds.toFixed(2)}s, RSS delta ${(retainedGrowth / 1024 / 1024).toFixed(1)} MiB, process peak RSS ${(process.resourceUsage().maxRSS / 1024).toFixed(1)} MiB`)
+    console.info(`synthetic native XLSX: ${count} valid, ${alreadyStored} stored, 488 recovered, 0 missing, 0 on repeat; ${seconds.toFixed(2)}s, RSS delta ${(retainedGrowth / 1024 / 1024).toFixed(1)} MiB, process peak RSS ${(process.resourceUsage().maxRSS / 1024).toFixed(1)} MiB`)
     expect(seconds).toBeLessThan(45)
     expect(retainedGrowth).toBeLessThan(1024 * 1024 * 1024)
   }, 60_000)

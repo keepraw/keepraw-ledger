@@ -26,6 +26,22 @@ export function nativeCells(occurrence = 1): unknown[] {
     'Synthetic source fragment\nsecond line', tx.id, tx.fingerprint, String(occurrence)]
 }
 
+// Display text retained by old exports can change if normalized a second time.
+export const NATIVE_DISPLAY_CASES = [
+  ['消费 支付宝-联东U谷餐厅', '支付宝-联东U谷餐厅'],
+  ['消费 支付宝-上海拉扎斯信息科技有限公司', '支付宝-上海拉扎斯信息科技有限公司'],
+  ['网上消费 财付通，合成商户', '财付通-合成商户'],
+] as const
+
+export function nativeDisplayCells(description: string = NATIVE_DISPLAY_CASES[0][0], occurrence = 1): unknown[] {
+  const tx = nativeTransaction(occurrence, { description, rawDescription: description })
+  const row = nativeCells(occurrence)
+  row[4] = description
+  row[17] = tx.id
+  row[18] = tx.fingerprint
+  return row
+}
+
 export function nativeWorkbook(rows = [nativeCells(1), nativeCells(3)], headers = NATIVE_HEADERS): ArrayBuffer {
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([headers, ...rows]), '交易明细')

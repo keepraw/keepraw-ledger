@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 import type { Snapshot } from '../src/db/repository'
-import { nativeCells, nativeTransaction, nativeWorkbook } from '../tests/fixtures/nativeLedger'
+import type { LegacyPreview } from '../src/importers/types'
+import { nativeCells, nativeDisplayCells, nativeTransaction, nativeWorkbook } from '../tests/fixtures/nativeLedger'
 
 async function snapshot(page: Page): Promise<Snapshot> {
   return page.evaluate(async () => {
@@ -9,6 +10,55 @@ async function snapshot(page: Page): Promise<Snapshot> {
     return (await import(url)).readSnapshot()
   })
 }
+
+test('same native file incrementally recovers previously excluded rows and a second repeat inserts zero', async ({ page }) => {
+  await page.goto('/#/settings')
+  await page.getByTestId('demo-toggle').uncheck()
+  const buffer = Buffer.from(nativeWorkbook([nativeCells(1), nativeDisplayCells(), nativeCells(3)]))
+  const before = await page.evaluate(async bytes => {
+    const importerUrl = '/src/importers/legacyImport.ts'
+    const repositoryUrl = '/src/db/repository.ts'
+    const descriptionUrl = '/src/core/descriptionNormalizer.ts'
+    const { previewLegacyWorkbook, planLegacyImport } = await import(importerUrl)
+    const repository = await import(repositoryUrl)
+    const { transactionDisplayDescription } = await import(descriptionUrl)
+    const workbook = new Uint8Array(bytes).buffer
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', workbook)))
+      .map(value => value.toString(16).padStart(2, '0')).join('')
+    const existing = await repository.readSnapshot()
+    const full = await previewLegacyWorkbook(workbook, { fileName: 'synthetic-recovery.xlsx', fileHash: hash, fileSize: bytes.length }, existing)
+    const oldRows = full.rows.filter((row: LegacyPreview['rows'][number]) =>
+      transactionDisplayDescription(row) === row.description)
+    await repository.persistLegacyImport(planLegacyImport({ ...full, rows: oldRows }, existing))
+    const initial = await repository.readSnapshot()
+    await repository.patchTransaction({ id: initial.transactions[0].id, category: '其他', reviewStatus: 'rejected', confidence: 1, flags: [] })
+    return repository.readSnapshot()
+  }, Array.from(buffer))
+  expect(before.transactions).toHaveLength(2)
+  const upload = { name: 'synthetic-recovery.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer }
+  await page.goto('/#/import')
+  await page.getByTestId('legacy-file-input').setInputFiles(upload)
+  await expect(page.getByTestId('legacy-preview-summary')).toContainText(/共 3 行数据，可导入 3 笔，\s*异常 0 行/)
+  await expect(page.getByTestId('legacy-incremental-recovery')).toContainText('已存在 2 笔')
+  await expect(page.getByTestId('legacy-incremental-recovery')).toContainText('本次可新增 1 笔')
+  await expect(page.getByTestId('legacy-confirm')).toHaveText('确认导入 1 笔')
+  await page.getByTestId('legacy-confirm').click()
+  await expect(page.getByTestId('legacy-preview')).toHaveCount(0)
+  const recovered = await snapshot(page)
+  expect(recovered.transactions).toHaveLength(3)
+  for (const tx of before.transactions) expect(recovered.transactions.find(row => row.id === tx.id)).toEqual(tx)
+  expect(recovered.imports[0]).toMatchObject({ status: 'imported', transactionCount: 1, duplicateOf: null })
+  expect(recovered.imports[0]!.message).toContain('增量恢复')
+  await page.getByTestId('legacy-file-input').setInputFiles(upload)
+  await expect(page.getByText('该文件此前已导入，确认后不会产生重复交易。')).toBeVisible()
+  await expect(page.getByTestId('legacy-confirm')).toHaveText('确认导入 0 笔')
+  await page.getByTestId('legacy-confirm').click()
+  await expect(page.getByTestId('legacy-preview')).toHaveCount(0)
+  const repeat = await snapshot(page)
+  expect(repeat.transactions).toEqual(recovered.transactions)
+  expect(repeat.statements).toEqual(recovered.statements)
+  expect(repeat.imports[0]).toMatchObject({ status: 'duplicate', transactionCount: 0 })
+})
 
 test('native 20-column preview, UI export, fresh-browser 21-column restoration and conflict protection', async ({ page, browser }, testInfo) => {
   const origin = new URL(String(testInfo.project.use.baseURL)).origin

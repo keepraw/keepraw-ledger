@@ -219,7 +219,10 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
   if (native) for (const row of rows) {
     if (!duplicateIds.has(row.id) && duplicates.duplicateIds.has(row.id)) suspectedDuplicates.set(row.id, ['不同原生交易身份'])
   }
-  const fresh = duplicateImport ? [] : rows.filter((row) => !duplicateIds.has(row.id))
+  // A native file may previously have been only partially recoverable. Its
+  // verified IDs, rather than import history, determine which rows are missing.
+  const skipWholeFile = !!duplicateImport && !native
+  const fresh = skipWholeFile ? [] : rows.filter((row) => !duplicateIds.has(row.id))
   const skipped = preview.rows.length - fresh.length
   const formatId: LegacyFormatId = preview.stats.formatId
   const formatName = LEGACY_FORMAT_NAME[formatId]
@@ -274,7 +277,7 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     byStatement.set(tx.statementId, group)
   }
   const priorStatements = new Map(existing.statements.filter((row) => !row.isDemo).map((row) => [row.id, row]))
-  const statements: Statement[] = duplicateImport ? [] : [...groups.entries()].map(([key, bucket]) => {
+  const statements: Statement[] = skipWholeFile ? [] : [...groups.entries()].map(([key, bucket]) => {
     const first = bucket[0]!
     const transactionCount = (byStatement.get(key) ?? []).length
     const prior = priorStatements.get(key)
@@ -309,7 +312,7 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     .map((row) => row.transactionDate ?? row.postingDate)
     .filter((date): date is string => date !== null)
     .sort()
-  const status = duplicateImport ? 'duplicate' : 'imported'
+  const status = duplicateImport && fresh.length === 0 ? 'duplicate' : 'imported'
 
   const record: ImportRecord = {
     id: `${preview.meta.fileHash}:${formatId}`,
@@ -326,12 +329,12 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     message:
       status === 'duplicate' && duplicateImport
         ? `与已导入文件 ${duplicateImport.fileName} 内容完全相同（SHA-256 一致），已跳过`
-        : `历史数据迁移（${formatName}）：解析到 ${preview.stats.totalRows} 笔，` +
+        : `${native && duplicateImport ? '原生文件增量恢复' : '历史数据迁移'}（${formatName}）：解析到 ${preview.stats.totalRows} 笔，` +
           `新增 ${transactions.length} 笔，跳过 ${skipped} 笔已存在` +
           (preview.anomalies.length > 0 ? `，${preview.anomalies.length} 行异常已排除` : ''),
     statementId: null,
     transactionCount: transactions.length,
-    duplicateOf: duplicateImport?.id ?? null,
+    duplicateOf: status === 'duplicate' ? duplicateImport?.id ?? null : null,
     parserId: formatId,
     importedAt: now,
     isDemo: false,
