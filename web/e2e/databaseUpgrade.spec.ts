@@ -88,7 +88,7 @@ test('Chromium v3 → v4 removes only merchant; abort rolls back rows, notes, se
     const before = await read(old); old.close()
     const failing = new BillDatabase(name)
     let deletionObserved = false
-    failing.version(5).stores({}).upgrade(async (transaction: { table: (name: string) => { get: (id: string) => Promise<object> } }) => {
+    failing.version(6).stores({}).upgrade(async (transaction: { table: (name: string) => { get: (id: string) => Promise<object> } }) => {
       deletionObserved = !Object.hasOwn(await transaction.table('transactions').get(rows[0]!.id), 'merchant')
       throw new Error('synthetic failure after merchant deletion')
     })
@@ -111,6 +111,6 @@ test('Chromium v3 → v4 removes only merchant; abort rolls back rows, notes, se
   for (const row of expected.transactions as Array<{ merchant?: unknown }>) delete row.merchant
   expect(observed.after).toEqual(expected)
   expect(observed.reopened).toEqual(expected)
-  expect(observed.version).toBe(4)
+  expect(observed.version).toBe(5)
   expect(observed.indexes).toEqual(['statementId'])
 })

@@ -1,3 +1,4 @@
+import { normalizeRestoredTransaction } from './restoreTransaction'
 import { withoutLegacyMerchant } from './transactionRecord'
 import type { ExistingSnapshot, IngestResult } from '../core/ingest'
 import type { Table } from 'dexie'
@@ -171,6 +172,31 @@ export async function updateTransactions(transactions: Transaction[]): Promise<v
   })
 }
 
+/** Re-read latest rows and change only review fields. One commit or none, including derived statements. */
+export async function reviewTransactions(ids: readonly string[], decision: 'confirmed' | 'rejected'): Promise<{
+  transactions: Transaction[]; statements: Statement[]
+}> {
+  const ownedIds = [...new Set(ids)]
+  if (decision !== 'confirmed' && decision !== 'rejected') throw new Error('无效的复核操作。')
+  return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
+    const settings = (await db.settings.get('app'))?.value as { demoMode?: boolean } | undefined
+    if (settings?.demoMode) throw new Error('演示模式下不能修改真实账本。')
+    const rows = await backupRows(db.transactions, ownedIds)
+    if (rows.some(row => !row || row.isDemo || row.reviewStatus === 'rejected' ||
+      (row.reviewStatus !== 'pending' && row.flags.length === 0))) {
+      throw new Error('所选交易已不存在或不再待复核，请刷新后重新选择；本次操作未写入。')
+    }
+    const transactions = rows.map(row => ({ ...row!, reviewStatus: decision,
+      flags: decision === 'confirmed' ? [] : row!.flags }))
+    for (let offset = 0; offset < transactions.length; offset += 2000) {
+      await db.transactions.bulkPut(transactions.slice(offset, offset + 2000))
+    }
+    const statements = transactions.length ? await rebuildStatementStates(transactions.map(row => row.statementId)) : []
+    if (transactions.length) await bumpLedgerRevision()
+    return { transactions, statements }
+  })
+}
+
 export async function getReviewNotes(): Promise<Record<string, string>> {
   const rows = await db.reviewNotes.toArray()
   return Object.fromEntries(rows.map((row) => [row.transactionId, row.note]))
@@ -253,8 +279,9 @@ async function backupRows<T>(table: Table<T, string>, ids: string[]): Promise<Ar
 /** Matching primary keys keep current metadata; financial or note conflicts abort. */
 export async function importBackup(payload: BackupPayload): Promise<void> {
   if (!validateBackup(payload)) throw new Error('备份包含无效记录，拒绝恢复')
-  // Old V1/V2 JSON and ZIP payloads may carry the retired field; never write it back.
-  payload = { ...payload, transactions: payload.transactions.map(withoutLegacyMerchant) }
+  // Normalize old V1/V2 JSON and ZIP rows immutably before any writes.
+  // This also removes PR #48 flags without relying on a database upgrade.
+  payload = { ...payload, transactions: payload.transactions.map(normalizeRestoredTransaction) }
   // V1 restores never touch reviewNotes: existing local notes stay unchanged.
   // V2 restores merge notes in the same atomic transaction as financial rows.
   const incomingNotes: ReviewNotePayload[] = payload.version === 2 ? payload.reviewNotes : []

@@ -39,7 +39,7 @@ it('v3 → v4 removes only merchant, preserves every other property/store and su
   try {
     for (let count = 0; count < 2; count++) {
       await upgraded.open()
-      expect(upgraded.verno).toBe(4)
+      expect(upgraded.verno).toBe(5)
       const actual = await upgraded.transactions.toArray()
       expect(actual).toEqual(rows.map(withoutLegacyMerchant))
       expect(actual.every(row => !Object.hasOwn(row, 'merchant'))).toBe(true)
@@ -69,7 +69,7 @@ it('rolls back the real v4 field deletion when a later upgrade step aborts', asy
   await old.table('transactions').bulkAdd(rows); old.close()
   const failing = new BillDatabase(name)
   let deletionObserved = false
-  failing.version(5).stores({}).upgrade(async transaction => {
+  failing.version(6).stores({}).upgrade(async transaction => {
     const row = await transaction.table('transactions').get(rows[0]!.id)
     deletionObserved = !Object.hasOwn(row, 'merchant')
     throw new Error('synthetic abort after v4 deletion')

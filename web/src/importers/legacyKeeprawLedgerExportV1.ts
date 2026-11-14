@@ -107,9 +107,9 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
       fail('identity_conflict', '交易标识、业务指纹、重复序号或金融字段无法互相验证；显示描述可能已丢失身份文本'); continue
     }
     rows.push({ ...financial, description, rawDescription, category, confidence: 0,
-      // Confidence and flags were never exported. Explicitly require review
-      // rather than pretending the original parser confidence was recovered.
-      flags: ['low_confidence'], rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
+      // Confidence and flags were never exported. Zero means unavailable here,
+      // not a measured low confidence; retain the exported review decision.
+      flags: [], rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
       native: { id, fingerprint, occurrence, reviewStatus, sourcePage, sourceFileName: text(cells[13]), sourceFileHash: text(cells[14]) } })
   }
   // An ID repeated within a workbook is ambiguous, even when financial fields
@@ -120,7 +120,7 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
     return false
   })
   if (valid.length) reviewIssues.push({ rowNumber: valid[0]!.sourceRow,
-    detail: 'XLSX 未导出置信度、复核标记、账期、原来源行号或独立备注；置信度设为 0 并标记低置信度，来源行号使用本工作簿行号。' +
+    detail: 'XLSX 未导出置信度、复核标记、账期、原来源行号或独立备注；置信度 0 仅表示不可恢复，不添加低置信度标记，不触发逐笔复核；保留导出的复核状态，来源行号使用本工作簿行号。' +
       (width === 20 ? '20 列版本没有原始描述，使用交易描述，无法验证的身份行已排除。' : '身份描述按已知源文本清理规则验证；无法还原的身份行已排除。') })
   return { rows: valid, anomalies, totalRows, reviewIssues }
 }
