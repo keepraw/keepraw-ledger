@@ -18,10 +18,12 @@ import {
   patchTransactionWithStatements as persistTransactionPatch,
   recomputeStatement as persistStatementRecomputation,
   updateTransactions,
+  reviewTransactions as persistReviewTransactions,
   validateBackup,
   type ArchiveStatus,
   type Snapshot,
 } from '../db/repository'
+import { deriveStatementState } from '../core/statementState'
 import { createDemoSnapshot, patchDemoSnapshot } from '../demo/demoStore'
 import { buildFullBackupZip, restoreFullBackupZip } from '../backup/archive'
 import {
@@ -67,6 +69,7 @@ interface AppApi {
   confirmLegacyImport: (preview: LegacyPreview) => Promise<ImportRecord>
   loadDemoData: () => Promise<void>
   updateTransaction: (patch: Partial<Transaction> & { id: string }) => Promise<void>
+  reviewTransactions: (ids: readonly string[], decision: 'confirmed' | 'rejected') => Promise<void>
   recomputeStatement: (statementId: string) => Promise<void>
   saveNote: (transactionId: string, note: string) => Promise<void>
   backup: () => Promise<void>
@@ -394,6 +397,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [enqueue, settings.demoMode])
 
+  const reviewTransactions = useCallback((ids: readonly string[], decision: 'confirmed' | 'rejected') => {
+    const ownedIds = [...new Set(ids)]
+    const demoRequest = settings.demoMode
+    const generation = demoGeneration.current
+    return enqueue(async () => {
+      if (demoRequest) {
+        if (generation !== demoGeneration.current) throw new Error('演示数据已重新生成，请重新操作。')
+        const current = demoCurrent.current
+        const byId = new Map(current.transactions.map(row => [row.id, row]))
+        const rows = ownedIds.map(id => byId.get(id))
+        if (rows.some(row => !row?.isDemo || row.reviewStatus === 'rejected' ||
+          (row.reviewStatus !== 'pending' && row.flags.length === 0))) throw new Error('所选演示交易不再待复核，请重新选择。')
+        const selected = new Set(ownedIds)
+        const transactions = current.transactions.map(row => selected.has(row.id)
+          ? { ...row, reviewStatus: decision, flags: decision === 'confirmed' ? [] : row.flags } : row)
+        const affected = new Set(rows.map(row => row!.statementId))
+        const grouped = new Map<string, Transaction[]>()
+        for (const row of transactions) {
+          if (!affected.has(row.statementId)) continue
+          const group = grouped.get(row.statementId) ?? []
+          group.push(row); grouped.set(row.statementId, group)
+        }
+        demoCurrent.current = { ...current, transactions, statements: current.statements.map(row => affected.has(row.id)
+          ? deriveStatementState(row, grouped.get(row.id) ?? []) : row) }
+        setDemoSnapshot(demoCurrent.current)
+        return
+      }
+      if ((await loadSettings()).demoMode) throw new Error('演示模式已开启，请切回真实模式后重新复核。')
+      const committed = await persistReviewTransactions(ownedIds, decision)
+      const byId = new Map(committed.transactions.map(row => [row.id, row]))
+      setSnapshot(current => ({ ...current,
+        transactions: current.transactions.map(row => byId.get(row.id) ?? row),
+        statements: mergeStatementStates(current.statements, committed.statements),
+      }))
+    })
+  }, [enqueue, settings.demoMode])
+
   const recomputeStatement = useCallback((statementId: string) => enqueue(async () => {
     if ((await loadSettings()).demoMode) throw new Error('请先关闭演示模式，再重新核对真实账单。')
     const statement = await persistStatementRecomputation(statementId)
@@ -527,6 +567,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       confirmLegacyImport,
       loadDemoData,
       updateTransaction: patchTransaction,
+      reviewTransactions,
       recomputeStatement,
       saveNote,
       backup,
@@ -554,6 +595,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       confirmLegacyImport,
       loadDemoData,
       patchTransaction,
+      reviewTransactions,
       recomputeStatement,
       saveNote,
       backup,

@@ -23,9 +23,10 @@ Rows without the flag are not written. Repeating the operation has no effect.
 Failures propagate, rolling back row changes and the version bump together; the
 next open retries the upgrade. Older databases also run their existing upgrades
 in the same transaction. Fresh databases start at v5 with no historical rows.
-This is a database upgrade, not a change to the JSON backup format or a rewrite
-of historical backup files. It repairs records present when an older database
-is upgraded; it does not sanitize an old backup restored later into a v5 database.
+The v5 upgrade repairs records present when an older database is opened.
+The follow-up restore boundary in `importBackup()` also cleans incoming V1/V2
+JSON and ZIP rows when restoring into an already-v5 database. It leaves historical
+backup files and their formats unchanged. See [restore and bulk review](review-batch-and-restore.md).
 
 ## Confidence usage audit
 
@@ -44,7 +45,8 @@ All `confidence` references under `web/src` were inspected:
   fields; `backup/validation.ts` validates the 0–1 range; `demo/demoData.ts` seeds
   demo confidence. No schema or backup format changes are needed.
 - `ReviewPage.tsx` uses flags/status, and `core/dataQuality.ts` counts flags.
-  Neither interprets confidence zero as a review task. Neither is changed.
+  Neither interprets confidence zero as a review task. The queue predicate and data-quality aggregation are unchanged; the review UI
+  now paginates that same queue and supports atomic batch decisions.
 
 ## Verification
 

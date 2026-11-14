@@ -1,5 +1,6 @@
 import { transactionDisplayDescription } from '../../core/descriptionNormalizer'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ReviewPagination, useReviewPagination } from '../components/ReviewPagination'
 import { useApp } from '../../app/AppStore'
 import { formatMinor } from '../../core/money'
 import { buildDuplicateReviewDetails } from '../../core/migrationAudit'
@@ -17,7 +18,7 @@ import {
 } from '../components/ui'
 
 export function ReviewPage() {
-  const { visibleStatements, visibleTransactions, updateTransaction, saveNote, state, recomputeStatement } = useApp()
+  const { visibleStatements, visibleTransactions, updateTransaction, reviewTransactions, saveNote, state, recomputeStatement } = useApp()
   const [tab, setTab] = useState<'statements' | 'transactions'>('statements')
   const [showAllStatements, setShowAllStatements] = useState(false)
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null)
@@ -27,8 +28,6 @@ export function ReviewPage() {
   useEffect(() => { setDraft({ demoMode: state.demoMode, text: '' }); setNoteError(null) }, [state.demoMode])
   const [recomputing, setRecomputing] = useState(false)
   const [recomputeError, setRecomputeError] = useState<string | null>(null)
-  const duplicateDetails = useMemo(() => buildDuplicateReviewDetails(visibleTransactions,
-    visibleTransactions.filter((tx) => tx.flags.includes('suspected_duplicate'))), [visibleTransactions])
   const transactionsById = useMemo(() => new Map(visibleTransactions.map((tx) => [tx.id, tx])), [visibleTransactions])
 
   const flaggedStatements = useMemo(
@@ -45,19 +44,66 @@ export function ReviewPage() {
   )
 
   const reviewStatements = showAllStatements ? visibleStatements : flaggedStatements
-  const active = reviewStatements.find((s) => s.id === selectedStatement) ?? reviewStatements[0] ?? null
+  const statementPagination = useReviewPagination(reviewStatements.length, `${state.demoMode}:${showAllStatements}`)
+  const pageStatements = reviewStatements.slice(statementPagination.start, statementPagination.end)
+  const active = pageStatements.find(s => s.id === selectedStatement) ?? pageStatements[0] ?? null
   const statementTransactions = useMemo(
-    () => (active ? visibleTransactions.filter((tx) => tx.statementId === active.id) : []),
-    [active, visibleTransactions],
+    () => active ? visibleTransactions.filter(tx => tx.statementId === active.id) : [], [active, visibleTransactions],
   )
-
-  const confirmTransaction = async (tx: Transaction, decision: 'confirmed' | 'rejected'): Promise<void> => {
-    await updateTransaction({
-      id: tx.id,
-      reviewStatus: decision,
-      flags: decision === 'confirmed' ? [] : tx.flags,
-    })
+  const detailPagination = useReviewPagination(statementTransactions.length, active?.id)
+  const transactionPagination = useReviewPagination(flaggedTransactions.length, state.demoMode)
+  const pageTransactions = useMemo(() => flaggedTransactions.slice(transactionPagination.start, transactionPagination.end),
+    [flaggedTransactions, transactionPagination.start, transactionPagination.end])
+  const duplicateDetails = useMemo(() => buildDuplicateReviewDetails(visibleTransactions,
+    pageTransactions.filter(tx => tx.flags.includes('suspected_duplicate'))), [visibleTransactions, pageTransactions])
+  const flaggedById = useMemo(() => new Map(flaggedTransactions.map(tx => [tx.id, tx])), [flaggedTransactions])
+  const [selection, setSelection] = useState({ demoMode: state.demoMode, ids: new Set<string>() })
+  const selectedIds = useMemo(() => selection.demoMode === state.demoMode
+    ? [...selection.ids].filter(id => flaggedById.has(id)) : [], [selection, state.demoMode, flaggedById])
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const allPageSelected = pageTransactions.length > 0 && pageTransactions.every(tx => selectedSet.has(tx.id))
+  const pageCheckbox = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (pageCheckbox.current) pageCheckbox.current.indeterminate = !allPageSelected && pageTransactions.some(tx => selectedSet.has(tx.id))
+  }, [allPageSelected, pageTransactions, selectedSet, tab])
+  const [confirmation, setConfirmation] = useState<{ ids: string[]; decision: 'confirmed' | 'rejected'; demoMode: boolean } | null>(null)
+  const confirmationRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const element = confirmationRef.current
+    if (!element || !confirmation || confirmation.demoMode !== state.demoMode) return
+    if (typeof element.showModal === 'function') element.showModal()
+    else element.setAttribute('open', '')
+  }, [confirmation, state.demoMode])
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const submitting = useRef(false)
+  useEffect(() => {
+    setSelection({ demoMode: state.demoMode, ids: new Set() }); setConfirmation(null); setReviewError(null)
+  }, [state.demoMode])
+  const choose = (ids: string[], checked: boolean) => setSelection(current => {
+    const next = new Set(current.demoMode === state.demoMode ? [...current.ids].filter(id => flaggedById.has(id)) : [])
+    for (const id of ids) { if (checked) next.add(id); else next.delete(id) }
+    return { demoMode: state.demoMode, ids: next }
+  })
+  const applyBatch = async () => {
+    if (!confirmation || submitting.current || confirmation.demoMode !== state.demoMode) return
+    submitting.current = true; setReviewBusy(true); setReviewError(null)
+    try {
+      await reviewTransactions(confirmation.ids, confirmation.decision)
+      setSelection({ demoMode: state.demoMode, ids: new Set() }); setConfirmation(null)
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '批量复核失败，本次操作未提交，请重试。')
+    } finally { submitting.current = false; setReviewBusy(false) }
   }
+  const confirmTransaction = async (tx: Transaction, decision: 'confirmed' | 'rejected'): Promise<void> => {
+    if (submitting.current) return
+    submitting.current = true; setReviewBusy(true); setReviewError(null)
+    try { await updateTransaction({ id: tx.id, reviewStatus: decision, flags: decision === 'confirmed' ? [] : tx.flags }) }
+    catch (error) { setReviewError(error instanceof Error ? error.message : '复核失败，请重试。') }
+    finally { submitting.current = false; setReviewBusy(false) }
+  }
+  const noteEntries = useMemo(() => Object.entries(state.notes), [state.notes])
+  const notePagination = useReviewPagination(noteEntries.length, state.demoMode)
 
   const recompute = async (statementId: string): Promise<void> => {
     setRecomputing(true)
@@ -88,6 +134,22 @@ export function ReviewPage() {
         </div>
       </div>
 
+      {reviewError && !confirmation ? <div className="notice notice-warn" role="alert">{reviewError}</div> : null}
+      {confirmation && confirmation.demoMode === state.demoMode ? (
+        <dialog ref={confirmationRef} className="card card-pad stack" style={{ maxWidth: 'min(36rem, calc(100vw - 2rem))', margin: 'auto' }} onCancel={event => { if (reviewBusy) event.preventDefault(); else setConfirmation(null) }} aria-modal="true" aria-label={confirmation.decision === 'confirmed' ? '批量确认交易' : '批量排除交易'}>
+          <h2>确定批量{confirmation.decision === 'confirmed' ? '确认' : '排除'} {confirmation.ids.length.toLocaleString('en-US')} 笔交易吗？</h2>
+          <p>{confirmation.decision === 'confirmed' ? '确认后会清空所选交易的复核标记。' : '排除后会保留原有标记，所选交易将退出复核队列。'}</p>
+          {confirmation.decision === 'confirmed' && confirmation.ids.some(id => flaggedById.get(id)?.flags.includes('suspected_duplicate')) ? <p className="notice notice-warn">所选记录包含疑似重复交易：确认后会清除疑似重复标记，这些交易将不再因该标记进入复核队列。请先核对来源和交易次数。</p> : null}
+          {confirmation.ids.some(id => !flaggedById.has(id)) ? <p role="alert">待复核记录已变化，请取消并重新选择。</p> : null}
+          {reviewError ? <p className="notice notice-warn" role="alert">{reviewError}</p> : null}
+          <div className="row">
+            <button className="btn" type="button" disabled={reviewBusy} onClick={() => setConfirmation(null)}>取消</button>
+            <button className="btn btn-primary" type="button" disabled={reviewBusy || confirmation.ids.some(id => !flaggedById.has(id))} onClick={() => void applyBatch()}>
+              {reviewBusy ? '正在提交…' : confirmation.decision === 'confirmed' ? '确定批量确认' : '确定批量排除'}
+            </button>
+          </div>
+        </dialog>
+      ) : null}
       {recomputeError ? <div className="notice notice-warn" role="alert">{recomputeError}</div> : null}
 
       {tab === 'statements' ? (
@@ -117,7 +179,7 @@ export function ReviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {reviewStatements.map((statement) => (
+                    {pageStatements.map((statement) => (
                       <tr
                         key={statement.id}
                         onClick={() => setSelectedStatement(statement.id)}
@@ -145,6 +207,7 @@ export function ReviewPage() {
               </div>
             </div>
 
+            <ReviewPagination label="账单对账" pagination={statementPagination} />
             {active ? (
               <div className="card">
                 <div className="card-head">
@@ -197,7 +260,7 @@ export function ReviewPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {statementTransactions.map((tx) => (
+                        {statementTransactions.slice(detailPagination.start, detailPagination.end).map((tx) => (
                           <tr key={tx.id}>
                             <td className="nowrap">{tx.transactionDate}</td>
                             <td className="truncate" title={tx.rawDescription}>
@@ -217,6 +280,7 @@ export function ReviewPage() {
                       </tbody>
                     </table>
                   </div>
+                  <ReviewPagination label="账单交易" pagination={detailPagination} />
                 </div>
               </div>
             ) : null}
@@ -228,10 +292,20 @@ export function ReviewPage() {
         </div>
       ) : (
         <div className="card">
+          <div className="card-pad stack">
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              <button className="btn btn-sm" type="button" disabled={reviewBusy} onClick={() => choose(flaggedTransactions.map(tx => tx.id), true)}>全选全部待复核 {flaggedTransactions.length.toLocaleString('en-US')} 笔</button>
+              <button className="btn btn-sm" type="button" disabled={reviewBusy || selectedIds.length === 0} onClick={() => setSelection({ demoMode: state.demoMode, ids: new Set() })}>清空选择</button>
+              <span data-testid="review-selection-count">已选择 {selectedIds.length.toLocaleString('en-US')} 笔</span>
+              <button className="btn btn-sm" type="button" disabled={reviewBusy || selectedIds.length === 0} onClick={() => { setReviewError(null); setConfirmation({ ids: [...selectedIds], decision: 'confirmed', demoMode: state.demoMode }) }}>批量确认</button>
+              <button className="btn btn-sm btn-danger" type="button" disabled={reviewBusy || selectedIds.length === 0} onClick={() => { setReviewError(null); setConfirmation({ ids: [...selectedIds], decision: 'rejected', demoMode: state.demoMode }) }}>批量排除</button>
+            </div>
+          </div>
           <div className="table-wrap">
             <table className="data" data-testid="review-table">
               <thead>
                 <tr>
+                  <th><input ref={pageCheckbox} type="checkbox" aria-label="全选当前页" checked={allPageSelected} disabled={reviewBusy} onChange={event => choose(pageTransactions.map(tx => tx.id), event.target.checked)} /></th>
                   <th>交易日</th>
                   <th>描述</th>
                   <th className="num">金额</th>
@@ -242,8 +316,9 @@ export function ReviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {flaggedTransactions.map((tx) => (
+                {pageTransactions.map((tx) => (
                   <tr key={tx.id}>
+                    <td><input type="checkbox" aria-label={`选择交易 ${tx.id}`} value={tx.id} checked={selectedSet.has(tx.id)} disabled={reviewBusy} onChange={event => choose([tx.id], event.target.checked)} /></td>
                     <td className="nowrap">{tx.transactionDate}</td>
                     <td className="truncate" title={tx.rawDescription}>
                       {transactionDisplayDescription(tx)}
@@ -273,10 +348,10 @@ export function ReviewPage() {
                     </td>
                     <td>
                       <div className="row row-tight">
-                        <button className="btn btn-sm" type="button" onClick={() => void confirmTransaction(tx, 'confirmed')}>
+                        <button className="btn btn-sm" type="button" disabled={reviewBusy} onClick={() => void confirmTransaction(tx, 'confirmed')}>
                           确认
                         </button>
-                        <button className="btn btn-sm btn-danger" type="button" onClick={() => void confirmTransaction(tx, 'rejected')}>
+                        <button className="btn btn-sm btn-danger" type="button" disabled={reviewBusy} onClick={() => void confirmTransaction(tx, 'rejected')}>
                           排除
                         </button>
                       </div>
@@ -286,6 +361,7 @@ export function ReviewPage() {
               </tbody>
             </table>
           </div>
+          <ReviewPagination label="交易复核" pagination={transactionPagination} />
         </div>
       )}
 
@@ -336,8 +412,8 @@ export function ReviewPage() {
           {noteError ? <div className="notice notice-warn" role="alert">{noteError}</div> : null}
           {Object.keys(state.notes).length > 0 ? (
             <div className="card-pad stack">
-              {Object.entries(state.notes).map(([id, note]) => {
-                const tx = visibleTransactions.find((row) => row.id === id)
+              {noteEntries.slice(notePagination.start, notePagination.end).map(([id, note]) => {
+                const tx = transactionsById.get(id)
                 return (
                   <div key={id} className="check">
                     <Badge tone="muted">备注</Badge>
@@ -350,6 +426,7 @@ export function ReviewPage() {
               })}
             </div>
           ) : null}
+          {noteEntries.length > 0 ? <ReviewPagination label="复核备注" pagination={notePagination} /> : null}
         </div>
       ) : null}
     </>
