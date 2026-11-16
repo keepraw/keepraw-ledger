@@ -11,7 +11,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TransactionsPage } from './pages/TransactionsPage'
 
 const NAV: Array<{ page: Page; label: string }> = [
-  { page: 'dashboard', label: '消费总览' },
+  { page: 'dashboard', label: '资金流向总览' },
   { page: 'quality', label: '数据质量' },
   { page: 'reconciliation', label: '账单核验' },
   { page: 'import', label: '账单导入' },

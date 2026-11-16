@@ -84,7 +84,7 @@ for (const format of MIGRATION_FORMATS) {
         交易日: row.transactionDate, 入账日: row.postingDate, 交易描述: displayed, 原始描述: reference.description,
         交易币种: row.transactionCurrency, 交易金额: String(reference.transactionAmount),
         入账币种: row.settlementCurrency, 入账金额: String(reference.settlementAmount),
-        交易类型: TRANSACTION_TYPE_LABELS[reference.type], 借贷方向: reference.direction === 'debit' ? '借' : '贷',
+        '历史类型（仅身份兼容）': TRANSACTION_TYPE_LABELS[reference.type], 借贷方向: reference.direction === 'debit' ? '借' : '贷',
         交易标识: row.id, 业务指纹: row.fingerprint, 重复序号: String(row.occurrence) })
     }
 

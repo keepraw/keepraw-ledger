@@ -1,6 +1,6 @@
 import type { Category, Direction, TransactionType } from './types'
 
-/** Authoritative bank tokens and explicit, delimited source-format prefixes only. */
+/** Frozen source-token encoding for identity compatibility, not financial facts. */
 const TYPE_TOKENS: Record<string, TransactionType> = {
   分期利息: 'interest', 分期手续费: 'interest', 分期扣款: 'installment_payment',
   每期入账: 'installment_payment', 分期入账: 'installment_payment',
@@ -23,40 +23,19 @@ export function extractSourceTypeToken(description: string): string {
   return SOURCE_PREFIX.exec(description.trim())?.[1] ?? ''
 }
 
-export function classifyTransactionType(bankToken: string, direction: Direction, amountMinor?: number): {
-  type: TransactionType
-  requiresReview: boolean
-} {
+/** Frozen pre-direction-first mapping, solely to reproduce existing fingerprints.
+ * Even its purchase/payment fallbacks are opaque compatibility metadata, not a
+ * business classification. Do not use its result outside identity storage.
+ */
+export function legacyTypeForIdentity(bankToken: string, direction: Direction): TransactionType {
   const token = bankToken.trim()
   let type = Object.hasOwn(TYPE_TOKENS, token) ? TYPE_TOKENS[token] : undefined
-  let requiresReview = !type && (token.length > 0 || direction === 'credit')
   if (type && type !== 'adjustment') {
     const creditType = type === 'payment' || type === 'refund' || type === 'cashback'
-    if (creditType !== (direction === 'credit')) { type = undefined; requiresReview = true }
+    if (creditType !== (direction === 'credit')) type = undefined
   }
-  if (amountMinor !== undefined && amountMinor !== 0 && (amountMinor < 0) !== (direction === 'credit')) requiresReview = true
-  return { type: type ?? (direction === 'debit' ? 'purchase' : 'payment'), requiresReview }
+  return type ?? (direction === 'debit' ? 'purchase' : 'payment')
 }
-
-export function inferTransactionType(bankToken: string, _description: string, direction: Direction): TransactionType {
-  return classifyTransactionType(bankToken, direction).type
-}
-
-/** Business types that increase the card balance. */
-export const DEBIT_TYPES: ReadonlySet<TransactionType> = new Set<TransactionType>([
-  'purchase',
-  'cash_advance',
-  'fee',
-  'interest',
-  'installment_payment',
-])
-
-/**
- * Installment bookkeeping: some banks show both the original purchase and the
- * per-instalment posting in the same cycle. Summing both double counts spending,
- * so only `installment_payment` counts as real new spending.
- */
-export const SPENDING_TYPES: ReadonlySet<TransactionType> = new Set<TransactionType>(['purchase', 'cash_advance'])
 
 const CATEGORY_RULES: Array<{ category: Category; re: RegExp }> = [
   { category: '餐饮', re: /(餐|food|restaurant|餐饮|food|tea|coffee|咖啡|茶|外卖|美团饿了么|kitchen|dining)/i },
@@ -70,15 +49,12 @@ const CATEGORY_RULES: Array<{ category: Category; re: RegExp }> = [
   { category: '订阅服务', re: /(会员|订阅|subscription|netflix|icloud|优酷|腾讯视频|爱奇艺)/i },
 ]
 
-export function inferCategory(description: string, type: TransactionType): Category {
-  if (type === 'payment') return '还款'
-  if (type === 'refund') return '退款'
+export function inferCategory(description: string): Category {
   const text = description ?? ''
   for (const rule of CATEGORY_RULES) {
     if (rule.re.test(text)) return rule.category
   }
-  if (type === 'purchase' || type === 'installment_payment' || type === 'installment_original') return '未分类'
-  return '其他'
+  return '未分类'
 }
 
 export function signForDirection(minor: number, direction: Direction): number {

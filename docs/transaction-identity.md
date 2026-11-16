@@ -1,5 +1,9 @@
 # Occurrence-aware import compatibility
 
+Direction-first finance retains `type` solely for identity compatibility; see
+[借贷方向优先](direction-first-ledger.md) for v6 review repair and independent
+installment posting evidence. The fingerprint algorithm described here is unchanged.
+
 The fingerprint algorithm, database schema and historical IDs are unchanged.
 Fingerprints are candidate keys, not proof of identity: exact descriptions and
 business fields must agree. Distinct original amounts or currencies are retained

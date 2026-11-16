@@ -319,6 +319,9 @@ async function applyBackupPayload(payload: BackupPayload, storedNotes: Array<{ t
         .some((key) => current[key as keyof Transaction] !== row[key as keyof Transaction])) {
         throw new Error(`交易标识冲突，拒绝覆盖：${row.id}`)
       }
+      if (current && Boolean(current.postingExclusion) !== Boolean(row.postingExclusion)) {
+        throw new Error(`入账排除依据冲突，拒绝覆盖：${row.id}`)
+      }
     }
     for (const [index, row] of payload.statements.entries()) {
       const current = storedStatements[index]

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { formatMinor } from '../../core/money'
 import {
   REVIEW_FLAG_LABELS,
-  TRANSACTION_TYPE_LABELS,
+  type Direction,
   type ReconciliationCheck,
   type ReviewFlag,
   type ReviewStatus,
@@ -78,9 +78,8 @@ export function ReviewStatusBadge({ status }: { status: ReviewStatus }) {
   return <Badge tone={tone}>{labels[status]}</Badge>
 }
 
-export function TypeBadge({ type }: { type: keyof typeof TRANSACTION_TYPE_LABELS }) {
-  const tone = type === 'installment_original' ? 'info' : type === 'payment' || type === 'refund' || type === 'cashback' ? 'ok' : 'muted'
-  return <Badge tone={tone as 'ok'}>{TRANSACTION_TYPE_LABELS[type]}</Badge>
+export function DirectionBadge({ direction }: { direction: Direction }) {
+  return <Badge tone={direction === 'credit' ? 'ok' : 'muted'}>{direction === 'credit' ? '贷记' : '借记'}</Badge>
 }
 
 export function FlagList({ flags }: { flags: ReviewFlag[] }) {

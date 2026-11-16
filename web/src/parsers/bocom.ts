@@ -1,5 +1,6 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { parseDateInput, resolveShortDate } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -119,6 +120,9 @@ export interface InstallmentPlan {
   remainingMinor: number | null
   remainingCount: number | null
   totalCount: number | null
+  sourceText: string
+  sourceTable: number
+  sourceRow: number
 }
 
 const INSTALLMENT_HEADER_CELL = /分期\s*时间|分期\s*产品描述|剩余本金|剩余期数|剩余利息/
@@ -138,6 +142,9 @@ export function locateInstallmentPlans(doc: SourceDocument): InstallmentPlan[] {
       const principal = amounts[0] ?? ''
       const count = ratio ? COUNT_CELL.exec(ratio) : null
       plans.push({
+        sourceText: row.join(' | '),
+        sourceTable: table.index,
+        sourceRow: i,
         product: row[1] ?? '',
         totalMinor: parseRatioAmount(principal, 1),
         remainingMinor: parseRatioAmount(principal, 0),
@@ -167,7 +174,7 @@ export function markInstallmentOriginals(
 ): ParsedTransaction[] {
   if (plans.length === 0) return transactions
   return transactions.map((tx) => {
-    if (tx.type !== 'purchase') return tx
+    if (tx.direction !== 'debit' || !['', '消费', '网上消费', '购物', '支付', '跨行二维码支付'].includes(tx.bankToken)) return tx
     const plan = plans.find(
       (candidate) =>
         candidate.totalMinor !== null &&
@@ -176,7 +183,7 @@ export function markInstallmentOriginals(
         tx.description.includes(candidate.product),
     )
     if (!plan) return tx
-    return { ...tx, type: 'installment_original' as const, bankToken: `${tx.bankToken}|installment_original` }
+    return { ...tx, type: 'installment_original' as const, postingExclusion: { source: 'bocom_plan' as const, detail: JSON.stringify(plan) }, bankToken: `${tx.bankToken}|installment_original` }
   })
 }
 
@@ -430,8 +437,7 @@ function parseRow(
     .trim()
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, signForDirection(settlementParsed.minor, direction))
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const description = rawDescription || '未识别交易'
 
   return {
@@ -445,9 +451,9 @@ function parseRow(
     settlementCurrency: settlementParsed.currency,
     settlementAmountMinor: signForDirection(settlementParsed.minor, direction),
     type,
-    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: 0.93,
     sourcePage: null,
     sourceRow: ref.rowIndex,

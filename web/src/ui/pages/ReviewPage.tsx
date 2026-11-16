@@ -14,7 +14,7 @@ import {
   ReconciliationChecks,
   ReviewStatusBadge,
   StatementStatusBadge,
-  TypeBadge,
+  DirectionBadge,
 } from '../components/ui'
 
 export function ReviewPage() {
@@ -255,7 +255,7 @@ export function ReviewPage() {
                           <th>交易日</th>
                           <th>描述</th>
                           <th className="num">金额</th>
-                          <th>类型</th>
+                          <th>方向</th>
                           <th>复核</th>
                         </tr>
                       </thead>
@@ -270,7 +270,7 @@ export function ReviewPage() {
                               {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
                             </td>
                             <td>
-                              <TypeBadge type={tx.type} />
+                              <DirectionBadge direction={tx.direction} />
                             </td>
                             <td>
                               <ReviewStatusBadge status={tx.reviewStatus} />
@@ -309,7 +309,7 @@ export function ReviewPage() {
                   <th>交易日</th>
                   <th>描述</th>
                   <th className="num">金额</th>
-                  <th>类型</th>
+                  <th>方向</th>
                   <th>原因</th>
                   <th>复核状态</th>
                   <th>操作</th>
@@ -327,7 +327,7 @@ export function ReviewPage() {
                       {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
                     </td>
                     <td>
-                      <TypeBadge type={tx.type} />
+                      <DirectionBadge direction={tx.direction} />
                     </td>
                     <td>
                       <FlagList flags={tx.flags} />
@@ -447,7 +447,7 @@ function SummaryRow({ label, minor, strong }: { label: string; minor: number | n
 export const REVIEW_FLAG_ORDER = Object.keys(REVIEW_FLAG_LABELS) as Array<keyof typeof REVIEW_FLAG_LABELS>
 
 const DIFFERENCE_LABELS: Record<string, string> = {
-  postingDate: '入账日', description: '描述', type: '类型', direction: '方向',
+  postingDate: '入账日', description: '描述', type: '历史身份类型（非业务事实）', direction: '方向',
   transactionCurrency: '原币币种', transactionAmountMinor: '原币金额',
 }
 
@@ -462,7 +462,7 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
       {candidates.length === 0 ? <p>当前账本无法定位候选，请对照原始文件核实。</p> : null}
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>记录</th><th>银行 / 卡尾号</th><th>交易日 / 入账日</th><th>描述</th><th>原币金额</th><th>结算金额</th><th>类型 / 方向</th><th>来源</th><th>复核状态</th></tr></thead>
+          <thead><tr><th>记录</th><th>银行 / 卡尾号</th><th>交易日 / 入账日</th><th>描述</th><th>原币金额</th><th>结算金额</th><th>方向</th><th>来源</th><th>复核状态</th></tr></thead>
           <tbody>{[transaction, ...candidates].map((row, index) => (
             <tr key={row.id}>
               <td>{index === 0 ? '当前交易' : '候选交易'}</td>
@@ -470,7 +470,7 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
               <td>{row.transactionDate} / {row.postingDate}</td><td>{transactionDisplayDescription(row)}</td>
               <td>{row.transactionCurrency} {formatMinor(row.transactionAmountMinor, row.transactionCurrency)}</td>
               <td>{row.settlementCurrency} {formatMinor(row.settlementAmountMinor, row.settlementCurrency)}</td>
-              <td><TypeBadge type={row.type} /> / {row.direction === 'credit' ? '贷记' : '借记'}</td>
+              <td><DirectionBadge direction={row.direction} /></td>
               <td>{row.sourceFileName}{row.sourceRow === null ? '' : `（来源行 ${row.sourceRow}）`}</td>
               <td><ReviewStatusBadge status={row.reviewStatus} /></td>
             </tr>

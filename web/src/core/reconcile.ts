@@ -1,4 +1,4 @@
-import { SPENDING_TYPES } from './classify'
+import { hasAmountDirectionConflict, isPostedTransaction } from './direction'
 import { formatMinor, normalizeCurrencyCode } from './money'
 import type { ReconciliationCheck, ReconciliationResult, StatementSummary, Transaction } from './types'
 
@@ -26,7 +26,11 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   const checks: ReconciliationCheck[] = []
   const currency = summary.components[0]?.currency ?? 'CNY'
 
-  const active = transactions.filter((tx) => tx.reviewStatus !== 'rejected')
+  const unrejected = transactions.filter((tx) => tx.reviewStatus !== 'rejected')
+  const active = unrejected.filter(tx => !tx.postingExclusion)
+  const conflicts = unrejected.filter(tx => hasAmountDirectionConflict(tx) || (tx.flags.includes('amount_direction_unclear') && tx.reviewStatus !== 'confirmed'))
+  if (conflicts.length) checks.push({ id: 'amount_direction', label: '交易金额与借贷方向一致', status: 'mismatch',
+    expectedMinor: 0, actualMinor: conflicts.length, differenceMinor: null, detail: `${conflicts.length} 笔交易存在借贷方向或金额符号冲突，需人工复核` })
   const otherCurrencies = active.filter((tx) => normalizeCurrencyCode(tx.settlementCurrency) !== normalizeCurrencyCode(currency))
   if (otherCurrencies.length > 0) {
     checks.push({
@@ -80,12 +84,11 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   checks.push(
     detailCheck(
       'debit_detail',
-      '交易明细消费/取现/分期入账合计 = 本期新增支出',
+      '交易明细借记合计 = 本期新增支出 + 费用 + 利息',
       'debit',
-      summary.newDebitMinor,
+      summary.newDebitMinor === null ? null : summary.newDebitMinor + (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0),
       active,
       currency,
-      SPENDING_DETAIL_TYPES,
     ),
   )
 
@@ -98,36 +101,19 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
       expectedMinor: (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0),
       actualMinor: null,
       differenceMinor: null,
-      detail: '',
+      detail: '未提供可靠的逐笔费用/利息字段，跳过细分核验；金额仍计入借记总额核验',
     })
-    const chargeCheck = checks[checks.length - 1]!
-    const relevant = active.filter(
-      (tx) => tx.direction === 'debit' && tx.settlementCurrency === currency && CHARGE_DETAIL_TYPES.has(tx.type),
-    )
-    const actual = relevant.reduce((sum, tx) => sum + tx.settlementAmountMinor, 0)
-    const difference = (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0) - actual
-    chargeCheck.status = difference === 0 ? 'passed' : 'mismatch'
-    chargeCheck.actualMinor = actual
-    chargeCheck.differenceMinor = difference
-    chargeCheck.detail =
-      difference === 0
-        ? `${relevant.length} 笔合计 ${formatMinor(actual, currency)}，与账单一致`
-        : `${relevant.length} 笔合计 ${formatMinor(actual, currency)}，账单费用+利息为 ${formatMinor(
-            (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0),
-            currency,
-          )}，差额 ${formatMinor(difference, currency)}`
   }
 
   // --- 4. credit detail ----------------------------------------------------
   checks.push(
     detailCheck(
       'credit_detail',
-      '交易明细还款/退货/返还合计 = 本期还款及其他贷记',
+      '交易明细贷记合计 = 本期贷记汇总',
       'credit',
       summary.newCreditMinor,
       active,
       currency,
-      CREDIT_DETAIL_TYPES,
     ),
   )
 
@@ -161,25 +147,6 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   return { status, checks, computedBalanceMinor: checks.find((check) => check.id === 'balance_equation')?.actualMinor ?? null }
 }
 
-/** Transaction types that make up the bank's 新增消费 / New Spending line. */
-const SPENDING_DETAIL_TYPES: ReadonlySet<Transaction['type']> = new Set<Transaction['type']>([
-  'purchase',
-  'cash_advance',
-  'installment_payment',
-  'adjustment',
-])
-
-/** Transaction types the bank books as 费用 / 利息. */
-const CHARGE_DETAIL_TYPES: ReadonlySet<Transaction['type']> = new Set<Transaction['type']>(['fee', 'interest'])
-
-/** Transaction types that make up 还款、退货、费用返还. */
-const CREDIT_DETAIL_TYPES: ReadonlySet<Transaction['type']> = new Set<Transaction['type']>([
-  'payment',
-  'refund',
-  'cashback',
-  'adjustment',
-])
-
 function detailCheck(
   id: string,
   label: string,
@@ -187,7 +154,6 @@ function detailCheck(
   expected: number | null,
   transactions: Transaction[],
   currency: string,
-  types: ReadonlySet<Transaction['type']>,
 ): ReconciliationCheck {
   if (expected === null) {
     return {
@@ -204,10 +170,7 @@ function detailCheck(
   const relevant = transactions.filter((tx) => {
     if (tx.direction !== direction) return false
     if (tx.settlementCurrency !== currency) return false
-    // A bank may print both the original installment purchase and the per-cycle
-    // posting. Only the per-cycle posting counts as new spending.
-    if (tx.type === 'installment_original') return false
-    return types.has(tx.type)
+    return !tx.postingExclusion
   })
 
   // Credit rows are stored as negative amounts, so compare magnitudes.
@@ -230,71 +193,23 @@ function detailCheck(
   }
 }
 
-/**
- * Real spending vs. billing movement.
- *
- * - real spending: what actually left the wallet (installment originals excluded)
- * - billing: the amount the bank posted to this cycle's balance
- */
-export interface SpendingBreakdown {
-  spendingMinor: number
-  cashAdvanceMinor: number
-  installmentPaymentMinor: number
-  refundMinor: number
-  cashbackMinor: number
-  feeMinor: number
-  interestMinor: number
-  paymentMinor: number
-  adjustmentMinor: number
-  realSpendingMinor: number
+/** Direction totals in a single settlement currency, with no business guesses. */
+export interface DirectionTotals {
   billingDebitMinor: number
   billingCreditMinor: number
   netMinor: number
+  transactionCount: number
 }
 
-export function summarizeTransactions(transactions: Transaction[], currency = 'CNY'): SpendingBreakdown {
-  const result: SpendingBreakdown = {
-    spendingMinor: 0,
-    cashAdvanceMinor: 0,
-    installmentPaymentMinor: 0,
-    refundMinor: 0,
-    cashbackMinor: 0,
-    feeMinor: 0,
-    interestMinor: 0,
-    paymentMinor: 0,
-    adjustmentMinor: 0,
-    realSpendingMinor: 0,
-    billingDebitMinor: 0,
-    billingCreditMinor: 0,
-    netMinor: 0,
-  }
-
+export function summarizeTransactions(transactions: Transaction[], currency = 'CNY'): DirectionTotals {
+  const result: DirectionTotals = { billingDebitMinor: 0, billingCreditMinor: 0, netMinor: 0, transactionCount: 0 }
   for (const tx of transactions) {
-    if (tx.reviewStatus === 'rejected') continue
-    // Minor units from different settlement currencies must never be added.
+    if (!isPostedTransaction(tx)) continue
     if (normalizeCurrencyCode(tx.settlementCurrency) !== normalizeCurrencyCode(currency)) continue
-    const amount = tx.settlementAmountMinor
-    if (tx.type === 'purchase') result.spendingMinor += amount
-    else if (tx.type === 'cash_advance') result.cashAdvanceMinor += amount
-    else if (tx.type === 'installment_payment') result.installmentPaymentMinor += amount
-    else if (tx.type === 'refund') result.refundMinor += amount
-    else if (tx.type === 'cashback') result.cashbackMinor += amount
-    else if (tx.type === 'fee') result.feeMinor += amount
-    else if (tx.type === 'interest') result.interestMinor += amount
-    else if (tx.type === 'payment') result.paymentMinor += amount
-    else result.adjustmentMinor += amount
-
-    if (tx.type === 'installment_original') continue
-    if (tx.direction === 'debit') result.billingDebitMinor += amount
-    else result.billingCreditMinor += -amount
+    if (tx.direction === 'debit') result.billingDebitMinor += tx.settlementAmountMinor
+    else result.billingCreditMinor += -tx.settlementAmountMinor
+    result.transactionCount++
   }
-
-  result.realSpendingMinor =
-    result.spendingMinor + result.cashAdvanceMinor + result.installmentPaymentMinor
   result.netMinor = result.billingDebitMinor - result.billingCreditMinor
   return result
-}
-
-export function isSpendingType(type: Transaction['type']): boolean {
-  return SPENDING_TYPES.has(type)
 }

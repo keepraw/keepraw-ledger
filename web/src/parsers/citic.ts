@@ -1,6 +1,7 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -353,8 +354,7 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
   const settlementAmountMinor = signForDirection(primary.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   const description = cleaned || '未识别交易'
 
@@ -369,9 +369,9 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     settlementCurrency: primary.currency,
     settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,
     sourcePage: null,
     sourceRow: rowIndex,

@@ -1,4 +1,5 @@
-import { inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
+import { hasAmountDirectionConflict, postingExclusionFromBankToken } from '../core/direction'
+import { inferCategory, legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import {
   normalizeHeader, normalizeLegacyBank, normalizeLegacyCard, normalizeLegacyCurrency,
@@ -73,15 +74,13 @@ export function parseUnifiedBillRows(data: unknown[][], columns: Map<string, num
       flags.push('low_confidence')
     }
     const direction = settlementAmountMinor < 0 ? 'credit' : 'debit'
-    if ((transactionAmountMinor < 0) !== (settlementAmountMinor < 0)) flags.push('amount_direction_unclear')
+    if (hasAmountDirectionConflict({ transactionAmountMinor, settlementAmountMinor, direction })) flags.push('amount_direction_unclear')
     if (transactionAmountMinor === 0 || settlementAmountMinor === 0) flags.push('amount_missing')
-    const classification = classifyTransactionType(extractSourceTypeToken(description), direction, settlementAmountMinor)
-    const type = classification.type
-    if (classification.requiresReview || flags.includes('amount_direction_unclear')) flags.push('transaction_type_unclear')
+    const type = legacyTypeForIdentity(extractSourceTypeToken(description), direction)
     rows.push({
       bank, cardLast4, transactionDate, postingDate, description, rawDescription: description,
       transactionCurrency, transactionAmountMinor,
-      settlementCurrency, settlementAmountMinor, type, direction, category: inferCategory(description, type),
+      settlementCurrency, settlementAmountMinor, type, direction, postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(description), description, direction), category: inferCategory(description),
       confidence: flags.includes('low_confidence') ? 0.5 : 0.9, flags,
       rawText: JSON.stringify(LEGACY_UNIFIED_BILL_COLUMNS.map(at)), sourceRow: rowNumber,
       cycleStart: null, cycleEnd: null,

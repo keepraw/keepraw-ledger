@@ -3,11 +3,11 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { applyFilters, DEFAULT_FILTERS, type Filters } from '../../core/analytics'
 import { formatMinor } from '../../core/money'
-import { CATEGORIES, TRANSACTION_TYPE_LABELS, bankName, type BankId, type Category, type Transaction } from '../../core/types'
+import { CATEGORIES, bankName, type BankId, type Category, type Transaction } from '../../core/types'
 import { downloadCsv, downloadXlsx } from '../../export/tabular'
-import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, TypeBadge } from '../components/ui'
+import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, DirectionBadge } from '../components/ui'
 
-type SortKey = 'transactionDate' | 'postingDate' | 'description' | 'settlementAmountMinor' | 'type'
+type SortKey = 'transactionDate' | 'postingDate' | 'description' | 'settlementAmountMinor' | 'direction'
 type SortDir = 'asc' | 'desc'
 
 const PAGE_SIZE = 50
@@ -15,7 +15,7 @@ const collator = new Intl.Collator()
 const compareDates = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0
 
 /** Sort repeated text groups once, then apply the historical date tie within each. */
-function sortRepeatedText(transactions: Transaction[], key: 'description' | 'type', direction: number): Transaction[] | undefined {
+function sortRepeatedText(transactions: Transaction[], key: 'description' | 'direction', direction: number): Transaction[] | undefined {
   if (transactions.length < 256) return undefined
   const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : tx[key]
   const values = new Set(transactions.map(valueOf))
@@ -40,7 +40,7 @@ function sortRepeatedText(transactions: Transaction[], key: 'description' | 'typ
 export function sortTransactions(transactions: Transaction[], sortKey: SortKey, sortDir: SortDir): Transaction[] {
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
-  if (sortKey === 'description' || sortKey === 'type') {
+  if (sortKey === 'description' || sortKey === 'direction') {
     const repeated = sortRepeatedText(transactions, sortKey, direction)
     if (repeated) return repeated
   }
@@ -67,7 +67,7 @@ export function TransactionsPage() {
   const { visibleTransactions, updateTransaction, state } = useApp()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('')
+  const [directionFilter, setDirectionFilter] = useState<string>('')
   const [sortKey, setSortKey] = useState<SortKey>('transactionDate')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(0)
@@ -77,7 +77,7 @@ export function TransactionsPage() {
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return applyFilters(visibleTransactions, filters).filter((tx) => {
-      if (typeFilter && tx.type !== typeFilter) return false
+      if (directionFilter && tx.direction !== directionFilter) return false
       if (!needle) return true
       return (
         matchesTransactionDescription(tx, needle) ||
@@ -85,7 +85,7 @@ export function TransactionsPage() {
         bankName(tx.bank).includes(needle)
       )
     })
-  }, [visibleTransactions, filters, search, typeFilter])
+  }, [visibleTransactions, filters, search, directionFilter])
   const rows = useMemo(() => sortTransactions(filtered, sortKey, sortDir), [filtered, sortKey, sortDir])
 
   const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -136,18 +136,16 @@ export function TransactionsPage() {
           />
           <select
             className="select"
-            value={typeFilter}
+            aria-label="借贷方向筛选"
+            value={directionFilter}
             onChange={(event) => {
-              setTypeFilter(event.target.value)
+              setDirectionFilter(event.target.value)
               setPage(0)
             }}
           >
-            <option value="">全部类型</option>
-            {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
+            <option value="">全部方向</option>
+            <option value="debit">借记</option>
+            <option value="credit">贷记</option>
           </select>
           <select
             className="select"
@@ -210,8 +208,8 @@ export function TransactionsPage() {
                   <th className="sortable num" onClick={() => toggleSort('settlementAmountMinor')}>
                     金额{arrow('settlementAmountMinor')}
                   </th>
-                  <th className="sortable" onClick={() => toggleSort('type')}>
-                    类型{arrow('type')}
+                  <th className="sortable" onClick={() => toggleSort('direction')}>
+                    方向{arrow('direction')}
                   </th>
                   <th>分类</th>
                   <th>复核</th>
@@ -239,7 +237,7 @@ export function TransactionsPage() {
                       {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
                     </td>
                     <td className="nowrap">
-                      <TypeBadge type={tx.type} />
+                      <DirectionBadge direction={tx.direction} />
                     </td>
                     <td>
                       <select
@@ -279,7 +277,7 @@ export function TransactionsPage() {
       </div>
 
       <p className="subtle">
-        金额排序：按结算币种代码固定分组，组内按金额数值升降序，不进行汇率换算。金额符号约定：支出为正，存入 / 还款 / 退款为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
+        金额排序：按结算币种代码固定分组，组内按金额数值升降序，不进行汇率换算。金额符号约定：借记为正，贷记为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
       </p>
     </>
   )

@@ -1,8 +1,9 @@
+import { hasAmountDirectionConflict, preserveLegacyPostingExclusion } from '../core/direction'
 import { transactionId } from '../core/dedupe'
 import { transactionFingerprint } from '../core/identity'
 import { transactionDisplayDescription } from '../core/descriptionNormalizer'
 import { cleanSourceDescription } from '../core/sourceDescription'
-import { BANKS, CATEGORIES, TRANSACTION_TYPE_LABELS, type Transaction, type TransactionType } from '../core/types'
+import { BANKS, CATEGORIES, TRANSACTION_TYPE_LABELS, type Transaction, type PostingExclusion, type TransactionType } from '../core/types'
 import { parseDateInput } from '../core/dates'
 import { parseLegacyAmount } from './legacyPythonExportV1'
 import type { LegacyAnomaly, LegacyPreview, NormalizedLegacyRow } from './types'
@@ -14,13 +15,14 @@ export const NATIVE_LEDGER_COLUMNS = [
   '交易类型', '借贷方向', '分类', '复核状态', '来源文件', '文件指纹', '来源页', '原始片段',
   '交易标识', '业务指纹', '重复序号',
 ] as const
-export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_COLUMNS, '原始描述'] as const
+export const NATIVE_LEDGER_RAW_COLUMNS = [...NATIVE_LEDGER_COLUMNS, '原始描述'] as const
+export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_RAW_COLUMNS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '入账排除依据'] as const
 
 /** Exact order, exact spelling, no duplicate, extra or conflicting columns. */
-export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | null {
-  const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
+export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | null {
+  const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
   return header.length === schema.length && schema.every((name, index) => header[index] === name)
-    ? header.length as 20 | 21 : null
+    ? header.length as 20 | 21 | 22 : null
 }
 
 const bankEntries = Object.entries(BANKS)
@@ -34,7 +36,7 @@ const positiveInteger = (value: unknown): number | null => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
-export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
+export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
   const rows: NormalizedLegacyRow[] = []
   const anomalies: LegacyAnomaly[] = []
   const reviewIssues: NonNullable<LegacyPreview['reviewIssues']> = []
@@ -87,8 +89,8 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
     const id = text(cells[17])
     const fingerprint = text(cells[18])
     const occurrence = positiveInteger(cells[19])
-    const rawDescription = width === 21 ? text(cells[20]) : displayed
-    if (width === 21 && !blank(cells[20]) && typeof cells[20] !== 'string') {
+    const rawDescription = width >= 21 ? text(cells[20]) : displayed
+    if (width >= 21 && !blank(cells[20]) && typeof cells[20] !== 'string') {
       fail('invalid_field', '原始描述必须是文本'); continue
     }
     // Older 20-column exports only retain the displayed identity candidate.
@@ -106,10 +108,24 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21) {
       id !== transactionId(fingerprint, occurrence) || description === undefined) {
       fail('identity_conflict', '交易标识、业务指纹、重复序号或金融字段无法互相验证；显示描述可能已丢失身份文本'); continue
     }
-    rows.push({ ...financial, description, rawDescription, category, confidence: 0,
+    let postingExclusion: PostingExclusion | null | undefined
+    if (width === 22) {
+      postingExclusion = null
+      if (!blank(cells[21])) {
+        try {
+          const evidence = JSON.parse(text(cells[21])) as PostingExclusion
+          if (!evidence || !['bocom_plan', 'bank_original_marker', 'legacy_installment_exclusion'].includes(evidence.source) ||
+            typeof evidence.detail !== 'string' || !evidence.detail.length) throw new Error('invalid evidence')
+          postingExclusion = evidence
+        } catch { fail('invalid_field', '入账排除依据无效'); continue }
+      }
+    } else {
+      postingExclusion = preserveLegacyPostingExclusion({ type, rawText: text(cells[16]) }).postingExclusion ?? null
+    }
+    rows.push({ ...financial, postingExclusion, description, rawDescription, category, confidence: 0,
       // Confidence and flags were never exported. Zero means unavailable here,
       // not a measured low confidence; retain the exported review decision.
-      flags: [], rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
+      flags: hasAmountDirectionConflict(financial) ? ['amount_direction_unclear'] : [], rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
       native: { id, fingerprint, occurrence, reviewStatus, sourcePage, sourceFileName: text(cells[13]), sourceFileHash: text(cells[14]) } })
   }
   // An ID repeated within a workbook is ambiguous, even when financial fields
@@ -138,6 +154,8 @@ export function compareNativeLedgerRows(rows: LegacyPreview['rows'], existing: T
     if (!current) continue
     if (fields.some(field => current[field] !== row[field])) {
       warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `交易标识冲突，拒绝覆盖：${row.id}` })
+    } else if (Boolean(current.postingExclusion) !== Boolean(row.postingExclusion)) {
+      warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `入账排除依据冲突，拒绝覆盖：${row.id}` })
     } else duplicateIds.add(row.id)
   }
   return { duplicateIds, warnings }

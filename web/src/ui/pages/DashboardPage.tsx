@@ -60,15 +60,14 @@ export function DashboardPage() {
 
   const hasData = visibleTransactions.length > 0
   const pendingStatements = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
-  const pendingTypes = visibleTransactions.filter(tx => tx.flags.includes('transaction_type_unclear') &&
-    tx.reviewStatus !== 'confirmed' && tx.reviewStatus !== 'rejected').length
+
   const displayedCards = showAllCards ? byCard : byCard.slice(0, 10)
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>消费总览</h1>
+          <h1>资金流向总览</h1>
           <p>本页仅汇总人民币结算交易，未通过对账的账单默认不计入；原币金额不会换算为人民币。</p>
         </div>
         <div className="row">
@@ -147,12 +146,6 @@ export function DashboardPage() {
           未进行汇率换算，完整记录可在「交易明细」查看。
         </div>
       ) : null}
-      {pendingTypes > 0 ? (
-        <div className="notice notice-warn" data-testid="type-summary-warning">
-          有 {pendingTypes} 笔交易类型待确认，默认未计入可信统计。
-          <a href="#/review">前往人工复核</a>，请结合银行原始记录确认资金性质。
-        </div>
-      ) : null}
       {pendingDuplicates > 0 ? (
         <div className="notice notice-warn" data-testid="duplicate-summary-warning">
           有 {pendingDuplicates} 笔未解决的疑似重复交易仍计入统计，总额可能重复累计。
@@ -170,21 +163,12 @@ export function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-stats">
-            <Stat
-              label="实际消费额"
-              value={`¥${formatMinor(summary.realSpendingMinor)}`}
-              hint="消费 + 取现 + 分期每期入账，不含分期原始消费"
-              badge={state.demoMode ? <DemoBadge /> : undefined}
-            />
-            <Stat label="退款额" value={`¥${formatMinor(summary.refundMinor)}`} hint="退货、退款等贷记交易" tone="neg" />
-            <Stat label="返现额" value={`¥${formatMinor(summary.cashbackMinor)}`} hint="刷卡金、积分返还等" tone="neg" />
-            <Stat
-              label="账单入账净额"
-              value={`¥${formatMinor(summary.netMinor)}`}
-              hint={`借记 ${formatMinor(summary.billingDebitMinor)} / 贷记 ${formatMinor(summary.billingCreditMinor)}`}
-            />
-            <Stat label="还款额" value={`¥${formatMinor(summary.paymentMinor)}`} hint="仅统计，未计入消费" tone="neg" />
-            <Stat label="费用与利息" value={`¥${formatMinor(summary.feeMinor + summary.interestMinor)}`} hint="手续费 + 利息" />
+            <Stat label="借记总额" value={`¥${formatMinor(summary.billingDebitMinor)}`}
+              hint="全部有效借记，可能包含费用、利息和取现；排除未入账分期原始记录"
+              badge={state.demoMode ? <DemoBadge /> : undefined} />
+            <Stat label="贷记总额" value={`¥${formatMinor(summary.billingCreditMinor)}`} hint="全部有效贷记的金额绝对值" tone="neg" />
+            <Stat label="账单入账净额" value={`¥${formatMinor(summary.netMinor)}`} hint="借记总额减去贷记总额" />
+            <Stat label="交易笔数" value={summary.transactionCount} hint="符合统计条件的有效入账记录" />
           </div>
 
           {pendingStatements > 0 && !filters.includeUnreconciled ? (
@@ -203,13 +187,13 @@ export function DashboardPage() {
             <div className="card">
               <div className="card-head">
                 <div>
-                  <h2>月度消费趋势</h2>
-                  <p>按交易日归月，退款单独统计</p>
+                  <h2>月度借贷趋势</h2>
+                  <p>按交易日归月，借记与贷记分别统计</p>
                 </div>
                 <div className="legend">
                   <span>
                     <span className="legend-swatch" style={{ background: 'var(--navy-800)' }} />
-                    消费
+                    借记
                   </span>
                 </div>
               </div>
@@ -224,7 +208,7 @@ export function DashboardPage() {
                       <div className="row chart-selectors">
                         <select
                           className="select"
-                          aria-label="消费趋势显示范围"
+                          aria-label="借贷趋势显示范围"
                           value={trendView}
                           onChange={(event) => setTrendView(event.target.value as TrendView)}
                         >
@@ -234,7 +218,7 @@ export function DashboardPage() {
                         {trendView === 'year' ? (
                           <select
                             className="select"
-                            aria-label="消费趋势年份"
+                            aria-label="借贷趋势年份"
                             value={effectiveTrendYear}
                             onChange={(event) => setSelectedTrendYear(event.target.value)}
                           >
@@ -244,19 +228,19 @@ export function DashboardPage() {
                       </div>
                     </div>
                     <BarChart
-                      ariaLabel="月度消费趋势，可横向滚动查看各月金额"
+                      ariaLabel="月度借贷趋势，可横向滚动查看各月金额"
                       data={displayedTrend.map((entry) => ({
                         id: entry.month,
                         label: entry.month,
-                        value: entry.spending,
-                        caption: `退款 ${formatMinor(entry.refund)}`,
-                        accessibleLabel: `${entry.month}，消费金额 ${formatMinor(entry.spending)} 元，退款金额 ${formatMinor(entry.refund)} 元`,
+                        value: entry.debit,
+                        caption: `贷记 ${formatMinor(entry.credit)}`,
+                        accessibleLabel: `${entry.month}，借记金额 ${formatMinor(entry.debit)} 元，贷记金额 ${formatMinor(entry.credit)} 元`,
                       }))}
                       formatValue={(value) => formatMinor(value)}
                     />
                   </>
                 ) : (
-                  <EmptyState title="暂无人民币消费或退款月份" />
+                  <EmptyState title="暂无人民币借贷月份" />
                 )}
               </div>
             </div>
@@ -264,8 +248,8 @@ export function DashboardPage() {
             <div className="card">
               <div className="card-head">
                 <div>
-                  <h2>银行消费分布</h2>
-                  <p>按实际消费额统计</p>
+                  <h2>银行借记分布</h2>
+                  <p>按借记总额统计</p>
                 </div>
               </div>
               <div className="card-pad">
@@ -276,7 +260,7 @@ export function DashboardPage() {
             <div className="card">
               <div className="card-head">
                 <div>
-                  <h2>卡片消费分布</h2>
+                  <h2>卡片借记分布</h2>
                   <p>按银行与卡尾号分组 · {byCard.length} 个统计项</p>
                 </div>
                 {byCard.length > 10 ? (
@@ -292,12 +276,12 @@ export function DashboardPage() {
                 ) : null}
               </div>
               <div className="card-pad">
-                <p className="subtle card-count" data-testid="card-distribution-count">参与本次消费统计的卡片项：{byCard.length}（按银行与尾号分组）</p>
+                <p className="subtle card-count" data-testid="card-distribution-count">参与本次借记统计的卡片项：{byCard.length}（按银行与尾号分组）</p>
                 <div
                   id="dashboard-card-distribution"
                   className={showAllCards && byCard.length > 10 ? 'card-list-scroll' : undefined}
                   role={showAllCards && byCard.length > 10 ? 'region' : undefined}
-                  aria-label={showAllCards && byCard.length > 10 ? '全部卡片消费分布，可纵向滚动查看' : undefined}
+                  aria-label={showAllCards && byCard.length > 10 ? '全部卡片借记分布，可纵向滚动查看' : undefined}
                   tabIndex={showAllCards && byCard.length > 10 ? 0 : undefined}
                 >
                   <HorizontalBars data={displayedCards} formatValue={(v) => `¥${formatMinor(v)}`} />

@@ -27,7 +27,7 @@ import { transactionDisplayDescription } from '../core/descriptionNormalizer'
  */
 
 import { minorToDecimalString } from '../core/money'
-import { TRANSACTION_TYPE_LABELS, bankName, type Statement, type Transaction } from '../core/types'
+import { bankName, type Statement, type Transaction } from '../core/types'
 import { triggerDownload } from './tabular'
 
 export const LEDGER_ARCHIVE_HUMAN_SHEET = '交易明细'
@@ -39,8 +39,8 @@ export const LEDGER_ARCHIVE_TRANSACTION_SHEET = LEDGER_ARCHIVE_HUMAN_SHEET
 export const LEDGER_ARCHIVE_STATEMENT_SHEET = LEDGER_ARCHIVE_METADATA_SHEET
 
 /**
- * Sheet 1 headers, in task order (11 columns):
- * 银行 / 卡尾号 / 交易日 / 入账日 / 说明 / 交易类型 / 方向 /
+ * Sheet 1 headers, in task order (10 columns):
+ * 银行 / 卡尾号 / 交易日 / 入账日 / 说明 / 方向 /
  * 交易币种 / 交易金额 / 结算币种 / 结算金额
  */
 export const LEDGER_HUMAN_HEADERS = [
@@ -49,7 +49,6 @@ export const LEDGER_HUMAN_HEADERS = [
   '交易日',
   '入账日',
   '说明',
-  '交易类型',
   '方向',
   '交易币种',
   '交易金额',
@@ -71,6 +70,8 @@ export const LEDGER_METADATA_HEADERS = [
   'source_statement',
   'imported_at',
   'raw_description',
+  'legacy_type_identity_only',
+  'posting_exclusion',
 ] as const
 
 export type LedgerArchiveCell = string | number | null
@@ -96,8 +97,7 @@ function directionLabel(direction: Transaction['direction']): string {
  * One human-readable row, resembling the original statement format:
  * - 银行 uses the Chinese bank name (`bankName`); the raw bank id is
  *   recoverable via the fixed bank map and is not needed for reading.
- * - 交易类型 uses the fixed Chinese type label (`TRANSACTION_TYPE_LABELS`);
- *   the mapping is one-to-one with the stored enum, no recalculation.
+ * - Historical type is confined to Technical Metadata for identity compatibility.
  * - 方向 uses 借/贷; same convention as the existing XLSX export.
  * - Currencies are stored codes; amounts are exact decimal strings from
  *   integer minor units (no float math, no FX conversion). Stored as text.
@@ -109,7 +109,6 @@ export function transactionToHumanRow(transaction: Transaction): LedgerArchiveCe
     text(transaction.transactionDate ?? ''),
     text(transaction.postingDate ?? ''),
     text(transactionDisplayDescription(transaction)),
-    text(TRANSACTION_TYPE_LABELS[transaction.type] ?? transaction.type),
     text(directionLabel(transaction.direction)),
     text(transaction.transactionCurrency),
     text(minorToDecimalString(transaction.transactionAmountMinor, transaction.transactionCurrency)),
@@ -139,6 +138,8 @@ export function transactionToMetadataRow(
     text(transaction.sourceFileName),
     text(importedAt),
     text(transaction.rawDescription),
+    text(transaction.type),
+    text(transaction.postingExclusion ? JSON.stringify(transaction.postingExclusion) : ''),
   ]
 }
 

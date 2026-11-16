@@ -54,8 +54,10 @@ export interface NormalizedLegacyRow {
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
+  /** Frozen legacy/native fingerprint metadata; never determines finance. */
   type: TransactionType
   direction: Direction
+  postingExclusion?: import('../core/types').PostingExclusion | null
   category: Category
   confidence: number
   flags: import('../core/types').ReviewFlag[]

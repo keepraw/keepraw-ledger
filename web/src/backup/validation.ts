@@ -60,9 +60,11 @@ function transaction(value: unknown): value is Row {
     (!Object.hasOwn(value, 'merchant') || text(value.merchant)) &&
     date(value.transactionDate) && date(value.postingDate) && currency(value.transactionCurrency) && currency(value.settlementCurrency) &&
     integer(value.transactionAmountMinor) && integer(value.settlementAmountMinor) && oneOf(value.type, TRANSACTION_TYPES) &&
+    (value.postingExclusion === undefined || value.postingExclusion === null || (object(value.postingExclusion) &&
+      oneOf(value.postingExclusion.source, ['bocom_plan', 'bank_original_marker', 'legacy_installment_exclusion']) && text(value.postingExclusion.detail) && value.postingExclusion.detail.length > 0)) &&
     oneOf(value.direction, ['debit', 'credit']) && oneOf(value.category, CATEGORIES) &&
     typeof value.confidence === 'number' && Number.isFinite(value.confidence) && value.confidence >= 0 && value.confidence <= 1 &&
-    Array.isArray(value.flags) && value.flags.every((flag) => oneOf(flag, REVIEW_FLAGS)) &&
+    Array.isArray(value.flags) && value.flags.every((flag) => (flag === 'transaction_type_unclear' || oneOf(flag, REVIEW_FLAGS))) &&
     oneOf(value.reviewStatus, ['ok', 'pending', 'confirmed', 'rejected']) &&
     (value.sourcePage === null || (integer(value.sourcePage) && value.sourcePage > 0)) && nonnegative(value.sourceRow) &&
     integer(value.occurrence) && value.occurrence > 0 && typeof value.isDemo === 'boolean' &&

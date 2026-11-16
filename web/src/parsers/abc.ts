@@ -1,6 +1,7 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, isIsoDate, parseDateInput, type IsoDate } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -375,8 +376,7 @@ function parseRow(
   const settlementAmountMinor = signForDirection(settleSplit.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken || section || '', direction, settlementAmountMinor)
-  let type = classification.type
+  let type = legacyTypeForIdentity(bankToken || section || '', direction)
   if (section && /还款/.test(section) && direction === 'credit' && type === 'payment') {
     // keep payment
   }
@@ -398,9 +398,10 @@ function parseRow(
     settlementCurrency: settleSplit.currency,
     settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    amountDirectionUnclear: settleSplit.minor !== 0 && settleSplit.negative !== (direction === 'debit'),
     bankToken: bankToken || section || '',
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.9 : 0.6,
     sourcePage: null,
     sourceRow,

@@ -147,7 +147,7 @@ it('preserves historical list sorting, ties and filtered order for non-amount ke
   const base = buildDemoDataset().flatMap(result => result.transactions)
   const rows: Transaction[] = base.flatMap((row, i) => [row, { ...row, id: `tie-${i}`, description: i % 2 ? '星巴克 Café 10' : 'amazon 2',
     postingDate: i % 3 ? row.postingDate : null, settlementAmountMinor: -row.settlementAmountMinor }]).reverse()
-  for (const key of ['transactionDate', 'postingDate', 'description', 'type'] as const) {
+  for (const key of ['transactionDate', 'postingDate', 'description', 'direction'] as const) {
     for (const direction of ['asc', 'desc'] as const) {
       const historical = [...rows].sort((a, b) => {
         const left = a[key], right = b[key]

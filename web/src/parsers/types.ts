@@ -50,14 +50,16 @@ export interface ParsedTransaction {
   rawDescription: string
   description: string
   transactionCurrency: string
-  /** Signed minor units: positive = expense, negative = credit. */
+  /** Signed minor units: positive = debit, negative = credit. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
+  /** Frozen legacy fingerprint metadata, not a financial classification. */
   type: TransactionType
-  /** Missing or contradictory authoritative type evidence; persist as review, never a guess. */
-  typeUncertain?: boolean
+  postingExclusion?: import('../core/types').PostingExclusion | null
   direction: Direction
+  /** Conflict in raw bank evidence before sign normalization. */
+  amountDirectionUnclear?: boolean
   /** The bank's own structured type token when the statement provides one. */
   bankToken: string
   confidence: number

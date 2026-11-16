@@ -1,6 +1,7 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
@@ -308,8 +309,7 @@ function parseEightColRow(cells: string[], rowIndex: number, fallbackCardLast4: 
   const settlementAmountMinor = signForDirection(settleParsed.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   const description = cleaned || '未识别交易'
 
@@ -324,9 +324,9 @@ function parseEightColRow(cells: string[], rowIndex: number, fallbackCardLast4: 
     settlementCurrency: settleCurrency,
     settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,
     sourcePage: null,
     sourceRow: rowIndex,
@@ -349,8 +349,7 @@ function parseSixColRow(cells: string[], rowIndex: number, fallbackCardLast4: st
   const transactionAmountMinor = signForDirection(txnSplit.minor, direction)
   const settlementAmountMinor = signForDirection(settleSplit.minor, direction)
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   return {
     cardLast4,
@@ -363,9 +362,9 @@ function parseSixColRow(cells: string[], rowIndex: number, fallbackCardLast4: st
     settlementCurrency: settleSplit.currency,
     settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: 0.85,
     sourcePage: null,
     sourceRow: rowIndex,

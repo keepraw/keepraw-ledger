@@ -19,9 +19,9 @@ const preview = (rows?: unknown[][], headers?: string[]) => previewLegacyWorkboo
 beforeEach(async () => { await db.delete(); await db.open() })
 
 describe('native Keepraw-Ledger XLSX round trip', () => {
-  it('freezes the exact 20-column historical schema and the actual 21-column exporter', async () => {
+  it('freezes the exact 20-column historical schema and the current 22-column exporter', async () => {
     expect(NATIVE_HEADERS).toHaveLength(20)
-    expect(EXPORT_COLUMNS.map(column => column.header)).toEqual([...NATIVE_HEADERS, '原始描述'])
+    expect(EXPORT_COLUMNS.map(column => column.header)).toEqual([...NATIVE_HEADERS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '原始描述', '入账排除依据'])
     expect(detectNativeLedgerShape(NATIVE_HEADERS)).toBe(20)
     expect(detectNativeLedgerShape([...NATIVE_HEADERS, '原始描述'])).toBe(21)
     expect((await preview()).stats).toMatchObject({ formatId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1, totalRows: 2,
@@ -71,7 +71,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
 
   it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('preserves exported review status %s and empty source metadata', async reviewStatus => {
     const tx = nativeTransaction(1, { reviewStatus, sourceFileName: '', sourceFileHash: '', sourcePage: null, rawText: '' })
-    const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+    const result = await preview([transactionToRow(tx)], EXPORT_COLUMNS.map(c => c.header))
     expect(planLegacyImport(result, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ reviewStatus,
       sourceFileName: '', sourceFileHash: '', sourcePage: null, rawText: '' })
   })
@@ -79,7 +79,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
   it('round trips the actual exporter, including display normalization, raw text and all transaction types', async () => {
     for (const type of TRANSACTION_TYPES) {
       const tx = nativeTransaction(4, { type, description: '消费 Synthetic Store', rawDescription: '消费 Synthetic Store', reviewStatus: 'rejected' })
-      const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+      const result = await preview([transactionToRow(tx)], EXPORT_COLUMNS.map(c => c.header))
       expect(result.anomalies).toEqual([])
       expect(result.rows[0]).toMatchObject({ description: tx.description, rawDescription: tx.rawDescription, type,
         id: tx.id, fingerprint: tx.fingerprint, occurrence: 4 })
@@ -88,7 +88,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     for (const bank of Object.keys(BANKS) as Array<keyof typeof BANKS>) {
       const tx = nativeTransaction(1, { bank, description: 'Synthetic Store', rawDescription: 'Synthetic Store /',
         transactionCurrency: 'JPY', transactionAmountMinor: -123, settlementAmountMinor: -9625, direction: 'credit', type: 'refund' })
-      const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+      const result = await preview([transactionToRow(tx)], EXPORT_COLUMNS.map(c => c.header))
       expect(result.anomalies).toEqual([])
       expect(result.rows[0]).toMatchObject({ id: tx.id, bank, transactionAmountMinor: -123, direction: 'credit', type: 'refund' })
     }
@@ -96,12 +96,12 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
 
   it('preserves an intentionally empty raw description when the exported identity still verifies', async () => {
     const tx = nativeTransaction(1, { rawDescription: '' })
-    const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+    const result = await preview([transactionToRow(tx)], EXPORT_COLUMNS.map(c => c.header))
     expect(result.anomalies).toEqual([])
     expect(planLegacyImport(result, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: tx.id,
       description: tx.description, rawDescription: '' })
     const invalid: unknown[] = transactionToRow(tx); invalid[20] = 123
-    expect((await preview([invalid], [...NATIVE_HEADERS, '原始描述'])).anomalies[0]!.kind).toBe('invalid_field')
+    expect((await preview([invalid], EXPORT_COLUMNS.map(c => c.header))).anomalies[0]!.kind).toBe('invalid_field')
   })
 
   it('reports unrecoverable display identity in 20 columns instead of generating replacement IDs', async () => {
@@ -128,7 +128,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
   it.each(NATIVE_DISPLAY_CASES)('retains strict 21-column raw-description and display validation: %s', async description => {
     const tx = nativeTransaction(7, { description, rawDescription: description })
     const headers = [...NATIVE_HEADERS, '原始描述']
-    const valid = await preview([transactionToRow(tx)], headers)
+    const valid = await preview([transactionToRow(tx).slice(0, 21)], headers)
     expect(valid.stats).toMatchObject({ validRows: 1, anomalyRows: 0 })
     expect(valid.rows[0]).toMatchObject({ id: tx.id, description, rawDescription: description })
     // Fingerprint and ID still verify, but the raw text cannot produce this
@@ -159,7 +159,7 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
 
   it('retains nullable dates without filling from the other leg', async () => {
     const tx = nativeTransaction(2, { transactionDate: null })
-    const result = await preview([transactionToRow(tx)], [...NATIVE_HEADERS, '原始描述'])
+    const result = await preview([transactionToRow(tx)], EXPORT_COLUMNS.map(c => c.header))
     expect(result.rows[0]).toMatchObject({ id: tx.id, transactionDate: null, postingDate: tx.postingDate })
     expect(result.stats.dateRange).toEqual({ min: tx.postingDate, max: tx.postingDate })
     const row = nativeCells(); row[2] = ''; row[3] = ''

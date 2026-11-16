@@ -17,8 +17,8 @@ export function bankName(id: BankId): string {
 }
 
 /**
- * Business type of a transaction. Kept independent from the signed amount so a
- * refund can never be mistaken for a purchase because of a merchant keyword.
+ * Frozen legacy identity vocabulary. These values include historical guesses
+ * and fallbacks; they are NOT financial facts or review reasons.
  */
 export const TRANSACTION_TYPES = [
   'purchase',
@@ -51,6 +51,12 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
 /** Bank-stated debit/credit direction. Positive amount always means money leaves the card. */
 export type Direction = 'debit' | 'credit'
 
+/** Independent evidence for excluding an informational, unposted original. */
+export interface PostingExclusion {
+  source: 'bocom_plan' | 'bank_original_marker' | 'legacy_installment_exclusion'
+  detail: string
+}
+
 export const CATEGORIES = [
   '未分类',
   '餐饮',
@@ -70,7 +76,6 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number]
 
 export const REVIEW_FLAGS = [
-  'transaction_type_unclear',
   'statement_mismatch',
   'missing_summary',
   'amount_direction_unclear',
@@ -86,7 +91,6 @@ export const REVIEW_FLAGS = [
 export type ReviewFlag = (typeof REVIEW_FLAGS)[number]
 
 export const REVIEW_FLAG_LABELS: Record<ReviewFlag, string> = {
-  transaction_type_unclear: '交易类型待确认',
   statement_mismatch: '账单对账存在差额',
   missing_summary: '缺少必要汇总信息',
   amount_direction_unclear: '借贷方向不确定',
@@ -114,12 +118,14 @@ export interface Transaction {
   /** Raw description straight from the statement, kept for traceability. */
   rawDescription: string
   transactionCurrency: string
-  /** Signed minor units, positive = expense, negative = credit/refund/repayment. */
+  /** Signed minor units: positive = debit, negative = credit. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
+  /** Legacy identity metadata only. Never use for finance, direction or review. */
   type: TransactionType
   direction: Direction
+  postingExclusion?: PostingExclusion | null
   category: Category
   /** Parser confidence (0–1). Native XLSX history uses 0 for unavailable metadata;
    * review tasks depend on flags/status, never this placeholder alone. */

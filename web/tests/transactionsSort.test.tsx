@@ -64,13 +64,13 @@ it('composes date, bank, card, type, review and all text search fields before pa
     row('bank-excluded', 1, { bank: 'icbc', cardLast4: '1234', transactionDate: '2025-02-10' }),
     row('card-excluded', 1, { bank: 'boc', cardLast4: '9999', transactionDate: '2025-02-10' }),
     row('date-excluded', 1, { bank: 'boc', cardLast4: '1234', transactionDate: '2025-03-01' }),
-    row('type-excluded', 1, { bank: 'boc', cardLast4: '1234', transactionDate: '2025-02-10', type: 'refund' }),
+    row('type-excluded', 1, { bank: 'boc', cardLast4: '1234', transactionDate: '2025-02-10', direction: 'credit' }),
     { ...selected[0]!, id: 'rejected', reviewStatus: 'rejected', description: 'rejected' },
   ]
   const { container } = render(<TransactionsPage />)
   fireEvent.change(screen.getByDisplayValue('全部银行'), { target: { value: 'boc' } })
   fireEvent.change(screen.getByDisplayValue('全部卡片'), { target: { value: '1234' } })
-  fireEvent.change(screen.getByDisplayValue('全部类型'), { target: { value: 'purchase' } })
+  fireEvent.change(screen.getByDisplayValue('全部方向'), { target: { value: 'debit' } })
   const dates = container.querySelectorAll('input[type="date"]')
   fireEvent.change(dates[0]!, { target: { value: '2025-02-01' } })
   fireEvent.change(dates[1]!, { target: { value: '2025-02-28' } })

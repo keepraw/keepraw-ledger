@@ -1,6 +1,7 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, addMonths, parseDateInput } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { itemCenterX, pageRows, type TextRow } from './pdfLayout'
@@ -468,11 +469,13 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
 
   // The two amount columns are far apart; pick the column the amount was printed in.
   let selected: { text: string; direction: Direction } | null = null
+  const amountColumns = new Set<Direction>()
   for (const item of row.items) {
     if (item.x < config.depositCenter - 45) continue
     const center = itemCenterX(item)
     if (center >= config.expenditureCenter - 45) selected = { text: item.text, direction: 'debit' }
     else if (center >= config.depositCenter - 45) selected = { text: item.text, direction: 'credit' }
+    if (selected && AMOUNT_RE.test(item.text.trim())) amountColumns.add(selected.direction)
   }
   const selectedAmount = requireTransactionAmount(selected, config.sourceRow)
   const parsed = requireTransactionAmount(parseAmountToMinor(selectedAmount.text.trim(), config.currency), config.sourceRow)
@@ -509,8 +512,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
 
   const cleaned = cleanDescription(rawDescription)
   const bankToken = extractSourceTypeToken(cleaned)
-  const classification = classifyTransactionType(bankToken, selectedAmount.direction, minor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, selectedAmount.direction)
 
   return {
     cardLast4: rowCardLast4,
@@ -523,9 +525,10 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     settlementCurrency: config.currency,
     settlementAmountMinor: minor,
     type,
-    typeUncertain: classification.requiresReview,
     direction: selectedAmount.direction,
+    amountDirectionUnclear: amountColumns.size > 1,
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, row.text, selectedAmount.direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.95 : 0.6,
     sourcePage: pageNumber,
     sourceRow: config.sourceRow,

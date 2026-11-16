@@ -1,3 +1,4 @@
+import { hasAmountDirectionConflict } from './direction'
 import { inferCategory } from './classify'
 import { assignOccurrences, assignStoredOccurrences, detectDuplicates, transactionId } from './dedupe'
 import { transactionFingerprint, statementKey } from './identity'
@@ -76,7 +77,7 @@ export function ingestParsedStatement(
     const fingerprint = fingerprints[index]!
     const occurrence = occurrences[index]!.occurrence
     const flags: ReviewFlag[] = []
-    if (tx.typeUncertain) flags.push('transaction_type_unclear')
+    if (tx.amountDirectionUnclear || hasAmountDirectionConflict(tx)) flags.push('amount_direction_unclear')
     if (tx.confidence < 0.8) flags.push('low_confidence')
     if (!tx.transactionDate || !tx.postingDate) flags.push('date_missing')
     if (!rowCardLast4 || rowCardLast4 === '????') flags.push('card_missing')
@@ -98,7 +99,8 @@ export function ingestParsedStatement(
       settlementAmountMinor: tx.settlementAmountMinor,
       type: tx.type,
       direction: tx.direction,
-      category: inferCategory(tx.description, tx.type) as Transaction['category'],
+      postingExclusion: tx.postingExclusion ?? null,
+      category: inferCategory(tx.description) as Transaction['category'],
       confidence: tx.confidence,
       flags,
       reviewStatus: flags.length > 0 ? 'pending' : 'ok',

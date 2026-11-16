@@ -47,12 +47,12 @@ describe('AUD-002 repeated text sorting', () => {
     }
   })
 
-  it('groups repeated transaction types without changing stable date ties', () => {
-    const rows = makeRows(600, ['合成商户']).map((tx, index) => ({ ...tx, type: TRANSACTION_TYPES[index % TRANSACTION_TYPES.length]! }))
+  it('groups repeated directions independently of legacy transaction types without changing stable date ties', () => {
+    const rows = makeRows(600, ['合成商户']).map((tx, index) => ({ ...tx, type: TRANSACTION_TYPES[index % TRANSACTION_TYPES.length]!, direction: index % 2 ? 'debit' as const : 'credit' as const }))
     for (const direction of [1, -1]) {
-      const expected = [...rows].sort((a, b) => a.type === b.type
-        ? (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '') : collator.compare(a.type, b.type) * direction)
-      expect(sortTransactions(rows, 'type', direction === 1 ? 'asc' : 'desc')).toEqual(expected)
+      const expected = [...rows].sort((a, b) => a.direction === b.direction
+        ? (a.transactionDate ?? '').localeCompare(b.transactionDate ?? '') : collator.compare(a.direction, b.direction) * direction)
+      expect(sortTransactions(rows, 'direction', direction === 1 ? 'asc' : 'desc')).toEqual(expected)
     }
   })
 

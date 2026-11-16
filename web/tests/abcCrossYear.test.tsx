@@ -66,6 +66,6 @@ it('persists both dates, keeps repeat identity and renders Dashboard year/month 
   app.visibleTransactions = snapshot.transactions
   app.visibleStatements = snapshot.statements
   render(<DashboardPage />)
-  expect(screen.getByRole('group', { name: '2025-12，消费金额 100.00 元，退款金额 0.00 元' })).toBeInTheDocument()
-  expect(screen.getByRole('group', { name: '2026-01，消费金额 200.00 元，退款金额 0.00 元' })).toBeInTheDocument()
+  expect(screen.getByRole('group', { name: '2025-12，借记金额 100.00 元，贷记金额 0.00 元' })).toBeInTheDocument()
+  expect(screen.getByRole('group', { name: '2026-01，借记金额 200.00 元，贷记金额 0.00 元' })).toBeInTheDocument()
 })

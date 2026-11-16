@@ -1,6 +1,7 @@
+import { isPostedTransaction } from './direction'
 import { monthKey } from './dates'
 import { normalizeCurrencyCode } from './money'
-import { summarizeTransactions, type SpendingBreakdown } from './reconcile'
+import { summarizeTransactions, type DirectionTotals } from './reconcile'
 import type { BankId, Statement, Transaction } from './types'
 
 export interface Filters {
@@ -36,52 +37,22 @@ export function applyFilters(transactions: Transaction[], filters: Filters): Tra
   })
 }
 
-export interface DashboardSummary {
-  realSpendingMinor: number
-  refundMinor: number
-  cashbackMinor: number
-  installmentPaymentMinor: number
-  feeMinor: number
-  interestMinor: number
-  paymentMinor: number
-  billingDebitMinor: number
-  billingCreditMinor: number
-  netMinor: number
-  transactionCount: number
-  breakdown: SpendingBreakdown
-}
+export type DashboardSummary = DirectionTotals
 
 export function summarize(transactions: Transaction[]): DashboardSummary {
-  const baseCurrencyRows = transactions.filter((tx) => normalizeCurrencyCode(tx.settlementCurrency) === 'CNY')
-  const breakdown = summarizeTransactions(baseCurrencyRows)
-  return {
-    realSpendingMinor: breakdown.realSpendingMinor,
-    refundMinor: -breakdown.refundMinor,
-    cashbackMinor: -breakdown.cashbackMinor,
-    installmentPaymentMinor: breakdown.installmentPaymentMinor,
-    feeMinor: breakdown.feeMinor,
-    interestMinor: breakdown.interestMinor,
-    paymentMinor: -breakdown.paymentMinor,
-    billingDebitMinor: breakdown.billingDebitMinor,
-    billingCreditMinor: breakdown.billingCreditMinor,
-    netMinor: breakdown.netMinor,
-    transactionCount: baseCurrencyRows.length,
-    breakdown,
-  }
+  return summarizeTransactions(transactions)
 }
 
-export function monthlyTrend(transactions: Transaction[]): Array<{ month: string; spending: number; refund: number }> {
-  const buckets = new Map<string, { spending: number; refund: number }>()
+export function monthlyTrend(transactions: Transaction[]): Array<{ month: string; debit: number; credit: number }> {
+  const buckets = new Map<string, { debit: number; credit: number }>()
   for (const tx of transactions) {
     if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
     if (tx.reviewStatus === 'rejected' || !tx.transactionDate) continue
     const key = monthKey(tx.transactionDate)
-    const bucket = buckets.get(key) ?? { spending: 0, refund: 0 }
-    if (tx.type === 'installment_original') continue
-    if (tx.type === 'refund') bucket.refund += -tx.settlementAmountMinor
-    else if (tx.type === 'purchase' || tx.type === 'cash_advance' || tx.type === 'installment_payment') {
-      bucket.spending += tx.settlementAmountMinor
-    }
+    const bucket = buckets.get(key) ?? { debit: 0, credit: 0 }
+    if (!isPostedTransaction(tx)) continue
+    if (tx.direction === 'credit') bucket.credit += -tx.settlementAmountMinor
+    else bucket.debit += tx.settlementAmountMinor
     buckets.set(key, bucket)
   }
   return [...buckets.entries()]
@@ -94,8 +65,7 @@ export function groupBy(transactions: Transaction[], key: (tx: Transaction) => s
   for (const tx of transactions) {
     if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
     if (tx.reviewStatus === 'rejected') continue
-    if (tx.type === 'installment_original') continue
-    if (tx.type !== 'purchase' && tx.type !== 'cash_advance' && tx.type !== 'installment_payment') continue
+    if (!isPostedTransaction(tx) || tx.direction !== 'debit') continue
     const label = key(tx)
     totals.set(label, (totals.get(label) ?? 0) + tx.settlementAmountMinor)
   }
@@ -108,8 +78,7 @@ export function groupByBank(transactions: Transaction[]): Array<{ label: string;
   const totals = new Map<string, number>()
   for (const tx of transactions) {
     if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
-    if (tx.reviewStatus === 'rejected' || tx.type === 'installment_original') continue
-    if (tx.type !== 'purchase' && tx.type !== 'cash_advance' && tx.type !== 'installment_payment') continue
+    if (!isPostedTransaction(tx) || tx.direction !== 'debit') continue
     totals.set(tx.bank, (totals.get(tx.bank) ?? 0) + tx.settlementAmountMinor)
   }
   return [...totals.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
@@ -139,8 +108,7 @@ export function filterByStatementTrust(
     statements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').map((s) => s.id),
   )
   return {
-    transactions: transactions.filter((tx) => !untrusted.has(tx.statementId) &&
-      (!tx.flags.includes('transaction_type_unclear') || tx.reviewStatus === 'confirmed')),
+    transactions: transactions.filter((tx) => !untrusted.has(tx.statementId)),
     excludedStatementIds: untrusted,
   }
 }
@@ -150,6 +118,6 @@ export function untrustedAmount(transactions: Transaction[], statements: Stateme
     statements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').map((s) => s.id),
   )
   return transactions
-    .filter((tx) => untrusted.has(tx.statementId) && tx.type !== 'installment_original' && normalizeCurrencyCode(tx.settlementCurrency) === 'CNY')
+    .filter((tx) => untrusted.has(tx.statementId) && isPostedTransaction(tx) && normalizeCurrencyCode(tx.settlementCurrency) === 'CNY')
     .reduce((sum, tx) => sum + Math.abs(tx.settlementAmountMinor), 0)
 }

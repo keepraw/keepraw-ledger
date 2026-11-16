@@ -214,7 +214,7 @@ describe('ingest + reconciliation pipeline', () => {
     const summary = summarize(
       ingestParsedStatement(parsed, { fileName: 'x.eml', fileHash: 'h', fileSize: 1, sourceType: 'eml' }, EMPTY).transactions,
     )
-    expect(summary.realSpendingMinor).toBe(SYNTHETIC_BOCOM.newDebitMinor)
+    expect(summary.billingDebitMinor).toBe(SYNTHETIC_BOCOM.newDebitMinor)
     // Billing movement excludes the original purchase too: the bank does not post it.
     expect(summary.billingDebitMinor).toBe(SYNTHETIC_BOCOM.newDebitMinor)
     // The raw statement rows do contain it, so the two numbers must differ.
@@ -226,8 +226,7 @@ describe('ingest + reconciliation pipeline', () => {
     const transactions = ingestParsedStatement(parsed, { fileName: 'x.eml', fileHash: 'h', fileSize: 1, sourceType: 'eml' }, EMPTY)
       .transactions
     const summary = summarize(transactions)
-    expect(summary.refundMinor).toBeGreaterThan(0)
-    expect(summary.paymentMinor).toBe(300000)
+    expect(summary.billingCreditMinor).toBe(720000)
     expect(summary.netMinor).toBe(summary.billingDebitMinor - summary.billingCreditMinor)
   })
 })
@@ -264,7 +263,7 @@ describe('analytics', () => {
     const transactions = results.flatMap((r) => r.transactions)
     const trend = monthlyTrend(transactions)
     expect(trend.length).toBeGreaterThan(1)
-    expect(trend.every((entry) => entry.spending >= 0)).toBe(true)
+    expect(trend.every((entry) => entry.debit >= 0)).toBe(true)
     expect(new Set(trend.map((entry) => entry.month)).size).toBe(trend.length)
   })
 

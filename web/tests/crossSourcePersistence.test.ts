@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { db } from '../src/db/db'
 import { exportDataBackup, importBackup, persistImportResults, persistLegacyImport, readSnapshot, setReviewNote, validateBackup } from '../src/db/repository'
 import { ingestParsedStatement } from '../src/core/ingest'
-import { inferTransactionType } from '../src/core/classify'
+import { legacyTypeForIdentity } from '../src/core/classify'
 import { auditMigrationRows } from '../src/core/migrationAudit'
 import type { ParsedTransaction } from '../src/parsers/types'
 import { LEGACY_UNIFIED_COLUMNS } from '../src/importers/legacyPythonExportV1'
@@ -34,7 +34,7 @@ async function storeNative(description: string, changes: Partial<ParsedTransacti
   return result
 }
 const VARIANTS: Array<[string, string, Partial<ParsedTransaction>]> = [
-  ['installment classification', '1/3期-商户分期-合成通讯', { type: inferTransactionType('分期扣款', '1/3期-商户分期-合成通讯', 'debit') }],
+  ['installment classification', '1/3期-商户分期-合成通讯', { type: legacyTypeForIdentity('分期扣款', 'debit') }],
   ['posting date', '消费 合成商户', { postingDate: '2024-01-07' }],
   ['description normalization', '消费 商户(历史)', { description: '消费 商户(银行)', rawDescription: '消费 商户(银行)' }],
   ['original currency', '消费 合成商户', { transactionCurrency: 'USD', transactionAmountMinor: 1800 }],
@@ -67,7 +67,7 @@ describe('real import plans and IndexedDB cross-source integrity', () => {
   it.each(['legacy-first', 'native-first'])('%s: preserves cashback vs payment and negative money', async (order) => {
     const description = '美食天天乐-合成商户'
     const buffer = workbookBytes('标准字段', LEGACY_UNIFIED_COLUMNS, [historyRow({ description, transaction_amount: -10, settlement_amount: -10 })])
-    const changes: Partial<ParsedTransaction> = { type: inferTransactionType('刷卡金', description, 'credit'), direction: 'credit', transactionAmountMinor: -1000, settlementAmountMinor: -1000 }
+    const changes: Partial<ParsedTransaction> = { type: legacyTypeForIdentity('刷卡金', 'credit'), direction: 'credit', transactionAmountMinor: -1000, settlementAmountMinor: -1000 }
     if (order === 'legacy-first') { await storeLegacy(buffer); await storeNative(description, changes) }
     else { await storeNative(description, changes); await storeLegacy(buffer) }
     const rows = await db.transactions.toArray()

@@ -28,7 +28,7 @@ export function useHashPage(): [Page, (page: Page) => void] {
 export function pageTitle(page: Page): string {
   switch (page) {
     case 'dashboard':
-      return '消费总览'
+      return '资金流向总览'
     case 'quality':
       return '数据质量'
     case 'reconciliation':

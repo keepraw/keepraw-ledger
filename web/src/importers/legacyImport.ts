@@ -63,7 +63,7 @@ function fingerprintOf(row: NormalizedLegacyRow): string {
  * - `legacy-python-export-v1` (`标准字段` sheet, snake_case columns)
  * - `legacy-keepraw-export-v1` (`交易明细` sheet, 银行/卡尾号/交易日/入账日/说明/交易币种/交易金额/结算币种/结算金额)
  * - `legacy-unified-bill-v1` (`统一账单` sheet, all nine historical columns)
- * - `legacy-keepraw-ledger-export-v1` (exact native 20/21-column schema)
+ * - `legacy-keepraw-ledger-export-v1` (exact native 20/21/22-column schema)
  */
 export async function previewLegacyWorkbook(
   buffer: ArrayBuffer,
@@ -158,7 +158,7 @@ async function detectLegacyAdapter(
       return { formatId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1, parsed: parseNativeLedgerRows(nativeSheet.rows.slice(1), width) }
     }
     if (header.some(cell => ['交易描述', '交易标识', '业务指纹', '重复序号', '原始描述'].includes(String(cell)))) {
-      throw new LegacyFormatError('原生交易导出表头不完整、顺序错误或存在冲突；仅接受完整 20/21 列 schema')
+      throw new LegacyFormatError('原生交易导出表头不完整、顺序错误或存在冲突；仅接受完整 20/21/22 列 schema')
     }
   }
   const pythonSheet = await readSheetData(buffer, LEGACY_STANDARD_SHEET)
@@ -242,10 +242,13 @@ export function planLegacyImport(preview: LegacyPreview, existing: LegacyExistin
     settlementAmountMinor: row.settlementAmountMinor,
     type: row.type,
     direction: row.direction,
+    postingExclusion: row.postingExclusion ?? null,
     category: row.category,
     confidence: row.confidence,
     flags: suspectedDuplicates.has(row.id) ? [...row.flags, 'suspected_duplicate'] : [...row.flags],
-    reviewStatus: suspectedDuplicates.has(row.id) ? 'pending' : row.native?.reviewStatus ?? (row.flags.length > 0 ? 'pending' : 'ok'),
+    reviewStatus: suspectedDuplicates.has(row.id) ? 'pending'
+      : row.native && (row.native.reviewStatus === 'confirmed' || row.native.reviewStatus === 'rejected') ? row.native.reviewStatus
+        : row.flags.length > 0 ? 'pending' : row.native?.reviewStatus ?? 'ok',
     sourceFileName: row.native?.sourceFileName ?? preview.meta.fileName,
     sourceFileHash: row.native?.sourceFileHash ?? preview.meta.fileHash,
     sourcePage: row.native?.sourcePage ?? null,

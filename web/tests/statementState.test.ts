@@ -21,7 +21,7 @@ async function seed(count = 1) {
 }
 async function trustedSpending() {
   const snapshot = await readSnapshot()
-  return summarize(filterByStatementTrust(snapshot.transactions, snapshot.statements, false).transactions).realSpendingMinor
+  return summarize(filterByStatementTrust(snapshot.transactions, snapshot.statements, false).transactions).billingDebitMinor
 }
 async function legacyPlan(description = '消费 追加商户') {
   const buffer = workbookBytes('标准字段', LEGACY_UNIFIED_COLUMNS, [historyRow({ description })])
@@ -68,7 +68,7 @@ describe('AUD-004 persisted statement state', () => {
   })
 
   it.each<Partial<Transaction>>([
-    { settlementAmountMinor: 25760 }, { type: 'payment' }, { direction: 'credit' },
+    { settlementAmountMinor: 25760 }, { direction: 'credit' },
     { settlementCurrency: 'USD' }, { reviewStatus: 'rejected' },
   ])('invalidates financial edits %j and reconciles after reverting', async (patch) => {
     const result = await seed()
@@ -77,6 +77,13 @@ describe('AUD-004 persisted statement state', () => {
     expect((await db.statements.get(row.statementId))!.status).toBe('needs_review')
     await updateTransactions([row])
     expect((await db.statements.get(row.statementId))!.status).toBe('reconciled')
+  })
+
+  it('does not change reconciliation or money when only legacy type metadata changes', async () => {
+    const result = await seed()
+    await patchTransaction({ id: result.transactions[0]!.id, type: 'payment' })
+    expect((await db.statements.get(result.statement!.id))!.status).toBe('reconciled')
+    expect(await trustedSpending()).toBe(12880)
   })
 
   it('bulk updates rebuild both the old and new statement when membership changes', async () => {
