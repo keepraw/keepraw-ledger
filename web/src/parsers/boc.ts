@@ -1,11 +1,11 @@
 import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, addMonths, parseDateInput } from '../core/dates'
-import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { itemCenterX, pageRows, type TextRow } from './pdfLayout'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'boc_pdf'
 const PARSER_VERSION = '2.0.0'
@@ -467,20 +467,21 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
   const rowCardLast4 = cardItem?.text.trim() ?? config.fallbackCardLast4
   if (!rowCardLast4) return null
 
-  // The two amount columns are far apart; pick the column the amount was printed in.
-  let selected: { text: string; direction: Direction } | null = null
-  const amountColumns = new Set<Direction>()
+  // Validate EVERY occupied amount column. Source signs cannot override the
+  // column's direction, and an invalid companion amount cannot be hidden.
+  const columnAmounts: Array<{ minor: number; direction: Direction }> = []
   for (const item of row.items) {
     if (item.x < config.depositCenter - 45) continue
     const center = itemCenterX(item)
-    if (center >= config.expenditureCenter - 45) selected = { text: item.text, direction: 'debit' }
-    else if (center >= config.depositCenter - 45) selected = { text: item.text, direction: 'credit' }
-    if (selected && AMOUNT_RE.test(item.text.trim())) amountColumns.add(selected.direction)
+    const direction: Direction = center >= config.expenditureCenter - 45 ? 'debit' : 'credit'
+    const parsed = requireTransactionAmount(parseAmountToMinor(item.text.trim(), config.currency), config.sourceRow)
+    columnAmounts.push({ minor: parsed.minor, direction })
   }
-  const selectedAmount = requireTransactionAmount(selected, config.sourceRow)
-  const parsed = requireTransactionAmount(parseAmountToMinor(selectedAmount.text.trim(), config.currency), config.sourceRow)
-  assertCreditSign(parsed.negativeByFormat, selectedAmount.direction, config.sourceRow)
-  const minor = signForDirection(parsed.minor, selectedAmount.direction)
+  // Both columns are ambiguous. Retain the debit column deterministically,
+  // regardless of PDF run order; both original amounts remain in rawText.
+  const selectedAmount = requireTransactionAmount(columnAmounts.find(amount => amount.direction === 'debit') ?? columnAmounts[0] ?? null, config.sourceRow)
+  const directionConflict = new Set(columnAmounts.map(amount => amount.direction)).size > 1
+  const amounts = resolveBankAmounts(selectedAmount.minor, selectedAmount.minor, selectedAmount.direction, 'magnitude', directionConflict)
 
   const descriptionStart = cardItem ? cardItem.x + cardItem.width : 0
   const parts: Array<{ y: number; text: string }> = []
@@ -521,12 +522,10 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     rawDescription,
     description: cleaned || '未识别交易',
     transactionCurrency: config.currency,
-    transactionAmountMinor: minor,
+    ...amounts,
     settlementCurrency: config.currency,
-    settlementAmountMinor: minor,
     type,
     direction: selectedAmount.direction,
-    amountDirectionUnclear: amountColumns.size > 1,
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, row.text, selectedAmount.direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.95 : 0.6,

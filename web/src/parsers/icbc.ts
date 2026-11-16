@@ -1,10 +1,10 @@
 import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { legacyTypeForIdentity, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'icbc_eml'
 const PARSER_VERSION = '1.0.0'
@@ -329,11 +329,11 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
 
   const direction: Direction = primary.direction ?? (primary.minor < 0 ? 'credit' : 'debit')
 
-  assertCreditSign(txnSplit.minor < 0 || settleSplit.minor < 0, direction, rowIndex)
+  const directionConflict = (primary.direction === null && primary.minor >= 0) ||
+    (txnSplit.direction !== null && txnSplit.direction !== direction)
+  const amounts = resolveBankAmounts(txnSplit.minor, settleSplit.minor, direction, 'magnitude', directionConflict)
   const txnCurrency = txnSplit.currency
-  const txnMinor = signForDirection(txnSplit.minor, direction)
   const settleCurrency = settleSplit.currency
-  const settleMinor = signForDirection(primary.minor, direction)
 
   const cleaned = cleanDescription(rawDescription)
   const type = legacyTypeForIdentity(bankToken, direction)
@@ -346,13 +346,10 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     rawDescription,
     description,
     transactionCurrency: txnCurrency,
-    transactionAmountMinor: txnMinor,
+    ...amounts,
     settlementCurrency: settleCurrency,
-    settlementAmountMinor: settleMinor,
     type,
     direction,
-    amountDirectionUnclear: (primary.direction === null && primary.minor >= 0) ||
-      (txnSplit.direction !== null && txnSplit.direction !== direction),
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,

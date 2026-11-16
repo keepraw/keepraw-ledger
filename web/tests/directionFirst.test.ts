@@ -28,6 +28,7 @@ import { SYNTHETIC_ICBC_HTML } from './fixtures/icbcEml'
 import { SYNTHETIC_ABC_HTML } from './fixtures/abcEml'
 import { SYNTHETIC_BOCOM_HTML } from './fixtures/bocomEml'
 import { SYNTHETIC_CITIC_HTML } from './fixtures/citicEml'
+import { BANK_SIGN_CONFLICTS, bocAmountColumns } from './fixtures/directionConflicts'
 
 beforeEach(async () => { vi.restoreAllMocks(); await db.delete(); await db.open() })
 
@@ -44,6 +45,85 @@ async function bankDocument(bank: string): Promise<SourceDocument> {
   return buildSourceDocument({ fileName: 'synthetic.html', fileHash: 'synthetic',
     buffer: new TextEncoder().encode(sources[bank as keyof typeof sources]).buffer })
 }
+
+describe('bank sign conflicts preserve rows and raw evidence instead of aborting', () => {
+  it.each(BANK_SIGN_CONFLICTS)('$id: parser → ingest → IndexedDB keeps both source signs and all normal rows', async entry => {
+    const doc = await buildSourceDocument({ fileName: 'synthetic-conflict.html', fileHash: entry.id,
+      buffer: new TextEncoder().encode(entry.html).buffer })
+    const parsed = parseDocument(doc, detectParser(doc)!.parser)
+    expect(parsed.transactions).toHaveLength(entry.count)
+    const conflict = parsed.transactions.find(tx => tx.rawDescription === entry.description)!
+    expect(conflict).toMatchObject({ direction: entry.direction, transactionAmountMinor: entry.transactionAmountMinor,
+      settlementAmountMinor: entry.settlementAmountMinor, amountDirectionUnclear: true })
+    for (const raw of entry.rawSigns) expect(conflict.rawText).toContain(raw)
+    const result = ingestParsedStatement(parsed, { fileName: doc.fileName, fileHash: entry.id, fileSize: 1, sourceType: 'html' }, EMPTY_SNAPSHOT)
+    await persistImportResults([result])
+    const snapshot = await readSnapshot()
+    expect(snapshot.transactions).toHaveLength(entry.count)
+    const stored = snapshot.transactions.find(tx => tx.rawDescription === entry.description)!
+    expect(stored).toMatchObject({ transactionAmountMinor: entry.transactionAmountMinor,
+      settlementAmountMinor: entry.settlementAmountMinor, direction: entry.direction,
+      reviewStatus: 'pending', flags: expect.arrayContaining(['amount_direction_unclear']), rawText: conflict.rawText })
+    expect(result.statement!.reconciliation.status).toBe('mismatch')
+    expect(summarize([stored])).toMatchObject({ transactionCount: 0, netMinor: 0 })
+    const baseline = parseDocument(await bankDocument(entry.bank), detectParser(doc)!.parser)
+    for (const normal of baseline.transactions.filter(tx => tx.rawDescription !== entry.description)) {
+      const retained = snapshot.transactions.find(tx => tx.rawDescription === normal.rawDescription && tx.sourceRow === normal.sourceRow)!
+      expect(retained).toMatchObject({ transactionAmountMinor: normal.transactionAmountMinor,
+        settlementAmountMinor: normal.settlementAmountMinor, direction: normal.direction, rawDescription: normal.rawDescription })
+      expect(retained.flags).not.toContain('amount_direction_unclear')
+    }
+  })
+
+  it.each(BANK_SIGN_CONFLICTS.filter(entry => /original-(minus|parentheses)/.test(entry.id)))('$id: excess precision still rejects the whole document', async entry => {
+    const raw = entry.rawSigns[0]!
+    const html = entry.html.replace(raw, raw.replace('.00', '.005'))
+    expect(html).not.toBe(entry.html)
+    const doc = await buildSourceDocument({ fileName: 'synthetic-precision.html', fileHash: 'precision',
+      buffer: new TextEncoder().encode(html).buffer })
+    expect(() => parseDocument(doc, detectParser(doc)!.parser)).toThrow(/金额/)
+    expect(await db.transactions.count()).toBe(0)
+    expect(await db.statements.count()).toBe(0)
+  })
+
+  for (const reverse of [false, true]) {
+    it.each([
+      ['152.00', '12.34', 15200], ['-152.00', '12.34', -15200],
+      ['152.00', '-12.34', 15200], ['-152.00', '-12.34', -15200],
+    ] as const)(`BOC both columns %s / %s (reverse=${reverse}): signs survive and all seven rows persist`, async (debit, credit, expectedMinor) => {
+      const pdf = bocAmountColumns(debit, credit, reverse)
+      const doc = { ...await bankDocument('boc'), pdf, text: pdfToText(pdf) }
+      const parsed = parseDocument(doc, detectParser(doc)!.parser)
+      const result = ingestParsedStatement(parsed, { fileName: 'synthetic-both-columns.pdf', fileHash: 'both', fileSize: 1, sourceType: 'pdf' }, EMPTY_SNAPSHOT)
+      await persistImportResults([result])
+      const rows = (await readSnapshot()).transactions
+      expect(rows).toHaveLength(7)
+      const conflict = rows.find(tx => tx.rawDescription === '示例超市-东门店')!
+      expect(conflict).toMatchObject({ direction: 'debit', transactionAmountMinor: expectedMinor,
+        settlementAmountMinor: expectedMinor, reviewStatus: 'pending', flags: expect.arrayContaining(['amount_direction_unclear']) })
+      expect(conflict.rawText).toContain(debit)
+      expect(conflict.rawText).toContain(credit)
+      expect(result.statement!.status).toBe('needs_review')
+      expect(rows.filter(tx => tx.id !== conflict.id).every(tx => !tx.flags.includes('amount_direction_unclear'))).toBe(true)
+    })
+  }
+  it('BOC single negative debit is saved unchanged for direction review', async () => {
+    const pdf = bocAmountColumns('-152.00', null)
+    const doc = { ...await bankDocument('boc'), pdf, text: pdfToText(pdf) }
+    const parsed = parseDocument(doc, detectParser(doc)!.parser)
+    const result = ingestParsedStatement(parsed, { fileName: 'synthetic-negative.pdf', fileHash: 'negative', fileSize: 1, sourceType: 'pdf' }, EMPTY_SNAPSHOT)
+    await persistImportResults([result])
+    expect((await readSnapshot()).transactions.find(tx => tx.rawDescription === '示例超市-东门店'))
+      .toMatchObject({ direction: 'debit', transactionAmountMinor: -15200, settlementAmountMinor: -15200,
+        reviewStatus: 'pending', flags: expect.arrayContaining(['amount_direction_unclear']) })
+  })
+  it.each([['152.00', '12.345'], ['152.005', '-12.34'], ['152.00', '10..25']])('BOC validates both columns independently: %s / %s', async (debit, credit) => {
+    const pdf = bocAmountColumns(debit!, credit!)
+    const doc = { ...await bankDocument('boc'), pdf, text: pdfToText(pdf) }
+    expect(() => parseDocument(doc, detectParser(doc)!.parser)).toThrow(/金额/)
+    expect(await db.transactions.count()).toBe(0)
+  })
+})
 
 describe('six bank parsers: descriptions never gate booking or determine direction', () => {
   for (const bank of ['boc', ...Object.keys(sources)]) {
@@ -209,16 +289,32 @@ function historicalRows(): Transaction[] {
     ['rejected', ['transaction_type_unclear'], 100, 100, 'debit'],
     ['pending', ['low_confidence'], 100, 100, 'debit'],
     ['pending', ['transaction_type_unclear'], 0, -100, 'credit'],
+    ['ok', ['transaction_type_unclear'], -100, 100, 'debit'],
+    ['ok', ['transaction_type_unclear', 'suspected_duplicate'], 100, -100, 'credit'],
+    ['confirmed', ['transaction_type_unclear', 'date_missing'], 100, -100, 'credit'],
+    ['rejected', ['transaction_type_unclear', 'low_confidence'], -100, 100, 'debit'],
+    ['ok', ['amount_direction_unclear'], 100, -100, 'credit'],
+    ['ok', ['transaction_type_unclear'], 100, 100, 'debit'],
+    ['ok', ['transaction_type_unclear', 'amount_direction_unclear'], -100, 100, 'debit'],
   ]
   return cases.map(([reviewStatus, flags, transactionAmountMinor, settlementAmountMinor, direction], index) =>
     ({ ...nativeTransaction(index + 1, { transactionCurrency: 'CNY', settlementCurrency: 'CNY' }),
       reviewStatus, flags, transactionAmountMinor, settlementAmountMinor, direction }) as Transaction)
 }
 function expectedRepairs(rows: Transaction[]) {
-  return rows.map((row, index) => ({ ...row, flags: index === 2 ? ['suspected_duplicate'] :
-    [3, 4, 5, 6, 7].includes(index) ? ['amount_direction_unclear'] : index === 9 ? ['low_confidence'] : [],
-  reviewStatus: [0, 1, 10].includes(index) ? 'ok' : row.reviewStatus }))
+  // Independent literal state/flag references; compare every other field exactly.
+  const expected: Array<[Transaction['reviewStatus'], string[]]> = [
+    ['ok', []], ['ok', []], ['pending', ['suspected_duplicate']],
+    ['pending', ['amount_direction_unclear']], ['pending', ['amount_direction_unclear']],
+    ['pending', ['amount_direction_unclear']], ['pending', ['amount_direction_unclear']],
+    ['confirmed', ['amount_direction_unclear']], ['rejected', []], ['pending', ['low_confidence']], ['ok', []],
+    ['pending', ['amount_direction_unclear']], ['pending', ['suspected_duplicate', 'amount_direction_unclear']],
+    ['confirmed', ['date_missing', 'amount_direction_unclear']], ['rejected', ['low_confidence', 'amount_direction_unclear']],
+    ['pending', ['amount_direction_unclear']], ['ok', []], ['pending', ['amount_direction_unclear']],
+  ]
+  return rows.map((row, index) => ({ ...row, reviewStatus: expected[index]![0], flags: expected[index]![1] }))
 }
+
 const schema = { statements: 'id', transactions: 'id, statementId', imports: 'id', settings: 'key', reviewNotes: 'transactionId', attachments: 'fileHash' }
 
 it('v5 → v6 repairs atomically and idempotently, preserving every other property and store', async () => {

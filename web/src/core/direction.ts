@@ -18,10 +18,15 @@ export function isPostedTransaction(row: Transaction): boolean {
 export function repairDirectionReview(row: Transaction): Transaction {
   const oldFlags: readonly string[] = row.flags
   const hadTypeFlag = oldFlags.includes('transaction_type_unclear')
-  if (!hadTypeFlag) return row
+  const conflict = hasAmountDirectionConflict(row)
+  // Also repair a previously cleaned row whose real direction flag was kept
+  // with an incorrect ok status. Preserve explicit human decisions.
+  if (!hadTypeFlag && !(conflict && row.flags.includes('amount_direction_unclear') && row.reviewStatus === 'ok')) return row
   const flags = row.flags.filter(flag => (flag as string) !== 'transaction_type_unclear')
-  if (hasAmountDirectionConflict(row) && !flags.includes('amount_direction_unclear')) flags.push('amount_direction_unclear')
-  return { ...row, flags, reviewStatus: row.reviewStatus === 'pending' && flags.length === 0 ? 'ok' : row.reviewStatus }
+  if (conflict && !flags.includes('amount_direction_unclear')) flags.push('amount_direction_unclear')
+  const reviewStatus = row.reviewStatus === 'confirmed' || row.reviewStatus === 'rejected' ? row.reviewStatus
+    : conflict ? 'pending' : row.reviewStatus === 'pending' && flags.length === 0 ? 'ok' : row.reviewStatus
+  return { ...row, flags, reviewStatus }
 }
 
 /** Preserve the OLD exclusion decision at old-format boundaries only. Never

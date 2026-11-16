@@ -1,9 +1,9 @@
 import { postingExclusionFromBankToken } from '../core/direction'
 import { parseDateInput, resolveShortDate } from '../core/dates'
-import { legacyTypeForIdentity, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'bocom_eml'
 const PARSER_VERSION = '2.0.0'
@@ -427,7 +427,7 @@ function parseRow(
 
   const transactionParsed = requireTransactionAmount(parseCurrencyAmount(cells[amountIndexes[0]!]!), ref.rowIndex)
   const settlementParsed = requireTransactionAmount(parseCurrencyAmount(cells[amountIndexes[1]!]!), ref.rowIndex)
-  assertCreditSign(transactionParsed.minor < 0 || settlementParsed.minor < 0, direction, ref.rowIndex)
+  const amounts = resolveBankAmounts(transactionParsed.minor, settlementParsed.minor, direction, 'magnitude')
 
   const skip = new Set<number>([...dateIndexes, cardIndex, ...amountIndexes])
   const rawDescription = cells
@@ -447,9 +447,8 @@ function parseRow(
     rawDescription,
     description,
     transactionCurrency: transactionParsed.currency,
-    transactionAmountMinor: signForDirection(transactionParsed.minor, direction),
+    ...amounts,
     settlementCurrency: settlementParsed.currency,
-    settlementAmountMinor: signForDirection(settlementParsed.minor, direction),
     type,
     direction,
     bankToken,

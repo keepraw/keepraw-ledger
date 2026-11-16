@@ -1,15 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { ingestSynthetic } from '../tests/fixtures/identity'
+import { BANK_SIGN_CONFLICTS, bocAmountColumns } from '../tests/fixtures/directionConflicts'
+import { encodeBocPdf } from '../tests/fixtures/bocCurrencyPdf'
 
 test('Chromium v5 repair rolls back on abort, preserves identity and notes, and reopens idempotently', async ({ page }) => {
   await page.goto('/')
   const result = ingestSynthetic(['合成未知借记', '境外交易返现', '财付通信用卡还款 财付通支付科技有限公司', '方向冲突', '已确认', '已排除'])
   const rows = result.transactions.map((row, index) => ({ ...row,
     direction: index === 0 ? 'debit' : 'credit',
-    transactionAmountMinor: index === 0 || index === 3 ? 12880 : -12880,
+    transactionAmountMinor: index === 0 || index >= 3 ? 12880 : -12880,
     settlementAmountMinor: index === 0 ? 12880 : -12880,
     flags: index === 2 ? ['transaction_type_unclear', 'suspected_duplicate'] : ['transaction_type_unclear'],
-    reviewStatus: index === 4 ? 'confirmed' : index === 5 ? 'rejected' : 'pending',
+    reviewStatus: index === 4 ? 'confirmed' : index === 5 ? 'rejected' : index === 3 ? 'ok' : 'pending',
   }))
   const observed = await page.evaluate(async rows => {
     const url = '/src/db/db.ts', { BillDatabase } = await import(url)
@@ -35,12 +37,45 @@ test('Chromium v5 repair rolls back on abort, preserves identity and notes, and 
   expect(observed.aborted).toBe(true)
   expect(observed.version).toBe(5)
   expect(observed.rolledBack).toEqual(sort(rows))
-  const repaired = rows.map((row, index) => ({ ...row, flags: index === 2 ? ['suspected_duplicate'] : index === 3 ? ['amount_direction_unclear'] : [],
-    reviewStatus: index < 2 ? 'ok' : row.reviewStatus }))
+  const repaired = rows.map((row, index) => ({ ...row, flags: index === 2 ? ['suspected_duplicate'] : index >= 3 ? ['amount_direction_unclear'] : [],
+    reviewStatus: index < 2 ? 'ok' : index === 3 ? 'pending' : row.reviewStatus }))
   expect(observed.repaired).toEqual(sort(repaired))
   expect(observed.reopened).toEqual(sort(repaired))
   expect(observed.retainedNote).toEqual(observed.note)
 })
+
+const conflictUploads = [
+  ...BANK_SIGN_CONFLICTS.filter(entry => ['ccb-eight-original-minus', 'citic-original-minus', 'bocom-debit-original-minus'].includes(entry.id))
+    .map(entry => ({ ...entry, name: 'synthetic-conflict.html', mimeType: 'text/html', bytes: new TextEncoder().encode(entry.html) })),
+  { id: 'boc-both-negative', bank: 'boc', name: 'synthetic-conflict.pdf', mimeType: 'application/pdf',
+    bytes: encodeBocPdf(bocAmountColumns('-152.00', '-12.34')), description: '示例超市-东门店',
+    direction: 'debit', transactionAmountMinor: -15200, settlementAmountMinor: -15200, count: 7 },
+]
+for (const entry of conflictUploads) {
+  test(`${entry.id}: upload saves conflicts and normal rows, then shows direction review after reload`, async ({ page }) => {
+    await page.goto('/#/settings')
+    await page.getByTestId('demo-toggle').uncheck()
+    await page.goto('/#/import')
+    await page.getByTestId('file-input').setInputFiles({ name: entry.name, mimeType: entry.mimeType, buffer: Buffer.from(entry.bytes) })
+    await expect(page.getByTestId('import-row').first()).toContainText(`解析到 ${entry.count} 笔`)
+    await expect(page.getByTestId('import-row').first()).toContainText('已进入待复核')
+    const rows = await page.evaluate(async () => {
+      const url = '/src/db/db.ts', { db } = await import(url)
+      return db.transactions.toArray()
+    })
+    expect(rows).toHaveLength(entry.count)
+    expect(rows.find((row: { rawDescription: string }) => row.rawDescription === entry.description)).toMatchObject({
+      direction: entry.direction, transactionAmountMinor: entry.transactionAmountMinor,
+      settlementAmountMinor: entry.settlementAmountMinor, reviewStatus: 'pending', flags: expect.arrayContaining(['amount_direction_unclear']) })
+    await page.goto('/#/transactions')
+    await expect(page.locator('tbody tr')).toHaveCount(entry.count)
+    await page.reload()
+    await expect(page.locator('tbody tr')).toHaveCount(entry.count)
+    await page.goto('/#/review')
+    await page.getByRole('button', { name: /交易复核/ }).click()
+    await expect(page.getByTestId('review-table')).toContainText('借贷方向不确定')
+  })
+}
 
 test('direction filters and Dashboard use debit/credit after restoring old type-only review', async ({ page }) => {
   await page.goto('/#/settings')

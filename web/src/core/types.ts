@@ -118,7 +118,8 @@ export interface Transaction {
   /** Raw description straight from the statement, kept for traceability. */
   rawDescription: string
   transactionCurrency: string
-  /** Signed minor units: positive = debit, negative = credit. */
+  /** Normally positive = debit, negative = credit. Direction-review rows retain
+   * contradictory source signs as evidence instead of silently correcting them. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
