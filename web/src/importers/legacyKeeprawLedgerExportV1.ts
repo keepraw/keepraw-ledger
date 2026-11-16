@@ -16,13 +16,15 @@ export const NATIVE_LEDGER_COLUMNS = [
   '交易标识', '业务指纹', '重复序号',
 ] as const
 export const NATIVE_LEDGER_RAW_COLUMNS = [...NATIVE_LEDGER_COLUMNS, '原始描述'] as const
-export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_RAW_COLUMNS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '入账排除依据'] as const
+export const NATIVE_LEDGER_POSTING_COLUMNS = [...NATIVE_LEDGER_RAW_COLUMNS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '入账排除依据'] as const
+export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_POSTING_COLUMNS, '方向复核标记'] as const
 
 /** Exact order, exact spelling, no duplicate, extra or conflicting columns. */
-export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | null {
-  const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
+export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | null {
+  const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS
+    : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
   return header.length === schema.length && schema.every((name, index) => header[index] === name)
-    ? header.length as 20 | 21 | 22 : null
+    ? header.length as 20 | 21 | 22 | 23 : null
 }
 
 const bankEntries = Object.entries(BANKS)
@@ -36,7 +38,7 @@ const positiveInteger = (value: unknown): number | null => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
-export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
+export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23) {
   const rows: NormalizedLegacyRow[] = []
   const anomalies: LegacyAnomaly[] = []
   const reviewIssues: NonNullable<LegacyPreview['reviewIssues']> = []
@@ -81,8 +83,8 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
     const reviewStatus = statuses.find(value => value === cells[12])
     const sourcePage = blank(cells[15]) ? null : positiveInteger(cells[15])
     if (!type || !direction || !category || !reviewStatus || (!blank(cells[15]) && sourcePage === null) ||
-      (settlementAmountMinor !== 0 && (settlementAmountMinor < 0) !== (direction === 'credit')) ||
       [13, 14, 16].some(index => !blank(cells[index]) && typeof cells[index] !== 'string') ||
+      (width === 23 && !blank(cells[22]) && cells[22] !== 'amount_direction_unclear') ||
       cells.slice(width).some(value => !blank(value))) {
       fail('invalid_field', '类型、方向、分类、复核状态或来源信息无效/冲突'); continue
     }
@@ -109,7 +111,7 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
       fail('identity_conflict', '交易标识、业务指纹、重复序号或金融字段无法互相验证；显示描述可能已丢失身份文本'); continue
     }
     let postingExclusion: PostingExclusion | null | undefined
-    if (width === 22) {
+    if (width >= 22) {
       postingExclusion = null
       if (!blank(cells[21])) {
         try {
@@ -123,9 +125,11 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
       postingExclusion = preserveLegacyPostingExclusion({ type, rawText: text(cells[16]) }).postingExclusion ?? null
     }
     rows.push({ ...financial, postingExclusion, description, rawDescription, category, confidence: 0,
-      // Confidence and flags were never exported. Zero means unavailable here,
-      // not a measured low confidence; retain the exported review decision.
-      flags: hasAmountDirectionConflict(financial) ? ['amount_direction_unclear'] : [], rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
+      // Confidence and general review flags were never exported. Only the
+      // 23-column schema carries explicit direction evidence; zero confidence
+      // still means unavailable, not a measured low confidence.
+      flags: hasAmountDirectionConflict(financial) || (width === 23 && cells[22] === 'amount_direction_unclear') ? ['amount_direction_unclear'] : [],
+      rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
       native: { id, fingerprint, occurrence, reviewStatus, sourcePage, sourceFileName: text(cells[13]), sourceFileHash: text(cells[14]) } })
   }
   // An ID repeated within a workbook is ambiguous, even when financial fields
@@ -136,7 +140,7 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22) {
     return false
   })
   if (valid.length) reviewIssues.push({ rowNumber: valid[0]!.sourceRow,
-    detail: 'XLSX 未导出置信度、复核标记、账期、原来源行号或独立备注；置信度 0 仅表示不可恢复，不添加低置信度标记，不触发逐笔复核；保留导出的复核状态，来源行号使用本工作簿行号。' +
+    detail: `XLSX 未导出置信度、${width === 23 ? '除方向复核外的其他复核标记' : '复核标记'}、账期、原来源行号或独立备注；置信度 0 仅表示不可恢复，不添加低置信度标记，不触发逐笔复核；有方向冲突时仍按独立标记复核，保留导出的复核状态，来源行号使用本工作簿行号。` +
       (width === 20 ? '20 列版本没有原始描述，使用交易描述，无法验证的身份行已排除。' : '身份描述按已知源文本清理规则验证；无法还原的身份行已排除。') })
   return { rows: valid, anomalies, totalRows, reviewIssues }
 }

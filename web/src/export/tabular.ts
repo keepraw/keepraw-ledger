@@ -33,6 +33,7 @@ export const EXPORT_COLUMNS = [
   { key: 'occurrence', header: '重复序号' },
   { key: 'rawDescription', header: '原始描述' },
   { key: 'postingExclusion', header: '入账排除依据' },
+  { key: 'amountDirectionUnclear', header: '方向复核标记' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -66,6 +67,7 @@ export function transactionToRow(transaction: Transaction): string[] {
     String(transaction.occurrence),
     transaction.rawDescription,
     transaction.postingExclusion ? JSON.stringify(transaction.postingExclusion) : '',
+    transaction.flags.includes('amount_direction_unclear') ? 'amount_direction_unclear' : '',
   ]
 }
 

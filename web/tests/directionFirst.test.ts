@@ -73,6 +73,18 @@ describe('bank sign conflicts preserve rows and raw evidence instead of aborting
         settlementAmountMinor: normal.settlementAmountMinor, direction: normal.direction, rawDescription: normal.rawDescription })
       expect(retained.flags).not.toContain('amount_direction_unclear')
     }
+    // Conflicts that can now be saved must also survive native XLSX recovery.
+    const bytes = nativeWorkbook(snapshot.transactions.map(transactionToRow), EXPORT_COLUMNS.map(c => c.header))
+    const meta = { fileName: 'synthetic-conflicts.xlsx', fileHash: 'native-conflicts', fileSize: bytes.byteLength }
+    const preview = await previewLegacyWorkbook(bytes, meta, EMPTY_SNAPSHOT)
+    expect(preview.anomalies).toEqual([])
+    const recovered = planLegacyImport(preview, EMPTY_SNAPSHOT).inserted
+    expect(recovered).toHaveLength(entry.count)
+    expect(summarize(recovered)).toEqual(summarize(snapshot.transactions))
+    expect(recovered.find(tx => tx.id === stored.id)).toMatchObject({ id: stored.id, fingerprint: stored.fingerprint,
+      occurrence: stored.occurrence, direction: stored.direction, transactionAmountMinor: stored.transactionAmountMinor,
+      settlementAmountMinor: stored.settlementAmountMinor, rawText: stored.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
+    expect(planLegacyImport(await previewLegacyWorkbook(bytes, meta, snapshot), snapshot).inserted).toEqual([])
   })
 
   it.each(BANK_SIGN_CONFLICTS.filter(entry => /original-(minus|parentheses)/.test(entry.id)))('$id: excess precision still rejects the whole document', async entry => {
@@ -105,6 +117,15 @@ describe('bank sign conflicts preserve rows and raw evidence instead of aborting
       expect(conflict.rawText).toContain(credit)
       expect(result.statement!.status).toBe('needs_review')
       expect(rows.filter(tx => tx.id !== conflict.id).every(tx => !tx.flags.includes('amount_direction_unclear'))).toBe(true)
+      const bytes = nativeWorkbook(rows.map(transactionToRow), EXPORT_COLUMNS.map(c => c.header))
+      const preview = await previewLegacyWorkbook(bytes, { fileName: 'synthetic-both.xlsx', fileHash: 'native-both', fileSize: bytes.byteLength }, EMPTY_SNAPSHOT)
+      expect(preview.anomalies).toEqual([])
+      const recovered = planLegacyImport(preview, EMPTY_SNAPSHOT).inserted
+      expect(recovered).toHaveLength(7)
+      expect(summarize(recovered)).toEqual(summarize(rows))
+      expect(recovered.find(tx => tx.id === conflict.id)).toMatchObject({ id: conflict.id, fingerprint: conflict.fingerprint,
+        direction: 'debit', transactionAmountMinor: expectedMinor, settlementAmountMinor: expectedMinor,
+        rawText: conflict.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
     })
   }
   it('BOC single negative debit is saved unchanged for direction review', async () => {
@@ -261,6 +282,23 @@ it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('native XLSX keeps 
   expect(preview.anomalies).toEqual([])
   expect(planLegacyImport(preview, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: row.id, fingerprint: row.fingerprint,
     category: '旅行', flags: ['amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
+})
+
+it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('native XLSX preserves a settlement/direction conflict with exported status %s', async status => {
+  const row = nativeTransaction(1, { reviewStatus: status, direction: 'debit', type: 'purchase',
+    transactionAmountMinor: -100, settlementAmountMinor: -100 })
+  const bytes = nativeWorkbook([transactionToRow(row)], EXPORT_COLUMNS.map(c => c.header))
+  const meta = { fileName: 'synthetic-direction.xlsx', fileHash: 'settlement-conflict', fileSize: bytes.byteLength }
+  const preview = await previewLegacyWorkbook(bytes, meta, EMPTY_SNAPSHOT)
+  expect(preview.anomalies).toEqual([])
+  expect(planLegacyImport(preview, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: row.id, fingerprint: row.fingerprint,
+    direction: 'debit', transactionAmountMinor: -100, settlementAmountMinor: -100,
+    flags: ['amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
+  // A conflicting direction under an ALREADY STORED ID still blocks recovery.
+  const existing = { ...EMPTY_SNAPSHOT, transactions: [{ ...row, direction: 'credit' as const }] }
+  const conflicting = await previewLegacyWorkbook(bytes, meta, existing)
+  expect(conflicting.identityWarnings).toEqual([expect.objectContaining({ blocking: true })])
+  expect(() => planLegacyImport(conflicting, existing)).toThrow('交易标识冲突')
 })
 
 it('duplicate financial candidates do not depend on legacy type and never mix settlement currencies or directions', () => {

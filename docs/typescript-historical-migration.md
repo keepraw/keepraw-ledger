@@ -1,6 +1,6 @@
 # TypeScript historical migration
 
-Direction-first finance and the current 22-column native export are documented in
+Direction-first finance and the current 23-column native export are documented in
 [借贷方向优先](direction-first-ledger.md). The frozen 20/21-column schemas below
 remain accepted; their type column is identity metadata, not a financial fact.
 

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { ingestSynthetic } from '../tests/fixtures/identity'
 import { BANK_SIGN_CONFLICTS, bocAmountColumns } from '../tests/fixtures/directionConflicts'
 import { encodeBocPdf } from '../tests/fixtures/bocCurrencyPdf'
+import { readFile } from 'node:fs/promises'
 
 test('Chromium v5 repair rolls back on abort, preserves identity and notes, and reopens idempotently', async ({ page }) => {
   await page.goto('/')
@@ -50,9 +51,12 @@ const conflictUploads = [
   { id: 'boc-both-negative', bank: 'boc', name: 'synthetic-conflict.pdf', mimeType: 'application/pdf',
     bytes: encodeBocPdf(bocAmountColumns('-152.00', '-12.34')), description: '示例超市-东门店',
     direction: 'debit', transactionAmountMinor: -15200, settlementAmountMinor: -15200, count: 7 },
+  { id: 'boc-both-positive', bank: 'boc', name: 'synthetic-conflict.pdf', mimeType: 'application/pdf',
+    bytes: encodeBocPdf(bocAmountColumns('152.00', '12.34')), description: '示例超市-东门店',
+    direction: 'debit', transactionAmountMinor: 15200, settlementAmountMinor: 15200, count: 7 },
 ]
 for (const entry of conflictUploads) {
-  test(`${entry.id}: upload saves conflicts and normal rows, then shows direction review after reload`, async ({ page }) => {
+  test(`${entry.id}: upload saves conflicts and normal rows, then native XLSX preserves evidence and identity`, async ({ page, browser }) => {
     await page.goto('/#/settings')
     await page.getByTestId('demo-toggle').uncheck()
     await page.goto('/#/import')
@@ -74,6 +78,36 @@ for (const entry of conflictUploads) {
     await page.goto('/#/review')
     await page.getByRole('button', { name: /交易复核/ }).click()
     await expect(page.getByTestId('review-table')).toContainText('借贷方向不确定')
+    await page.goto('/#/transactions')
+    const downloadEvent = page.waitForEvent('download')
+    await page.getByTestId('export-xlsx').click()
+    const download = await downloadEvent
+    const bytes = await readFile((await download.path())!)
+    const context = await browser.newContext()
+    try {
+      const restored = await context.newPage()
+      await restored.goto('/#/settings')
+      await restored.getByTestId('demo-toggle').uncheck()
+      await restored.goto('/#/import')
+      await restored.getByTestId('legacy-file-input').setInputFiles({ name: 'synthetic-recovery.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: bytes })
+      await expect(restored.getByTestId('legacy-preview-summary')).toContainText(`可导入 ${entry.count} 笔`)
+      await restored.getByTestId('legacy-confirm').click()
+      await expect(restored.getByTestId('legacy-preview')).toHaveCount(0)
+      const recovered = await restored.evaluate(async () => {
+        const url = '/src/db/db.ts', { db } = await import(url)
+        return db.transactions.toArray()
+      })
+      expect(recovered).toHaveLength(entry.count)
+      const original = rows.find((row: { rawDescription: string }) => row.rawDescription === entry.description)
+      expect(recovered.find((row: { id: string }) => row.id === original.id)).toMatchObject({
+        id: original.id, fingerprint: original.fingerprint, occurrence: original.occurrence, direction: original.direction,
+        transactionAmountMinor: original.transactionAmountMinor, settlementAmountMinor: original.settlementAmountMinor,
+        rawText: original.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
+      await restored.goto('/#/review')
+      await restored.getByRole('button', { name: /交易复核/ }).click()
+      await expect(restored.getByTestId('review-table')).toContainText('借贷方向不确定')
+    } finally { await context.close() }
   })
 }
 
