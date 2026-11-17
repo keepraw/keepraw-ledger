@@ -1,4 +1,4 @@
-import { effectiveDirection, effectiveAmountForDirection, hasUnresolvedDirection } from '../core/direction'
+import { effectiveCurrencyForDirection, effectiveDirection, effectiveAmountForDirection, hasUnresolvedDirection } from '../core/direction'
 import { transactionDisplayDescription } from '../core/descriptionNormalizer'
 /**
  * Human-readable ledger archive (XLSX).
@@ -75,7 +75,7 @@ export const LEDGER_METADATA_HEADERS = [
   'legacy_type_identity_only',
   'posting_exclusion',
   'stored_direction', 'raw_transaction_amount_minor', 'raw_settlement_amount_minor',
-  'direction_evidence', 'direction_resolution', 'raw_text',
+  'direction_evidence', 'direction_resolution', 'raw_text', 'bank_column_amounts',
 ] as const
 
 export type LedgerArchiveCell = string | number | null
@@ -114,10 +114,10 @@ export function transactionToHumanRow(transaction: Transaction): LedgerArchiveCe
     text(transaction.postingDate ?? ''),
     text(transactionDisplayDescription(transaction)),
     text(hasUnresolvedDirection(transaction) ? '方向待解决（未入账）' : directionLabel(effectiveDirection(transaction))),
-    text(transaction.transactionCurrency),
-    text(minorToDecimalString(effectiveAmountForDirection(transaction, 'transaction') ?? transaction.transactionAmountMinor, transaction.transactionCurrency)),
-    text(transaction.settlementCurrency),
-    text(minorToDecimalString(effectiveAmountForDirection(transaction) ?? transaction.settlementAmountMinor, transaction.settlementCurrency)),
+    text(effectiveCurrencyForDirection(transaction, 'transaction')),
+    text(minorToDecimalString(effectiveAmountForDirection(transaction, 'transaction') ?? transaction.transactionAmountMinor, effectiveCurrencyForDirection(transaction, 'transaction'))),
+    text(effectiveCurrencyForDirection(transaction)),
+    text(minorToDecimalString(effectiveAmountForDirection(transaction) ?? transaction.settlementAmountMinor, effectiveCurrencyForDirection(transaction))),
   ]
 }
 
@@ -147,6 +147,7 @@ export function transactionToMetadataRow(
     text(transaction.direction), String(transaction.transactionAmountMinor), String(transaction.settlementAmountMinor),
     text(transaction.directionEvidence ? JSON.stringify(transaction.directionEvidence) : ''),
     text(transaction.directionResolution ? JSON.stringify(transaction.directionResolution) : ''), text(transaction.rawText),
+    text(transaction.bankColumnAmounts ? JSON.stringify(transaction.bankColumnAmounts) : ''),
   ]
 }
 

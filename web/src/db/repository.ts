@@ -1,4 +1,4 @@
-import { applyReviewPatch, effectiveDirection, hasResolvedDirection } from '../core/direction'
+import { isPostingExcluded, bankColumnSelectionKey, applyReviewPatch, effectiveDirection, hasResolvedDirection } from '../core/direction'
 import { normalizeRestoredTransaction } from './restoreTransaction'
 import { withoutLegacyMerchant } from './transactionRecord'
 import type { ExistingSnapshot, IngestResult } from '../core/ingest'
@@ -151,7 +151,7 @@ export async function patchTransactionWithStatements(patch: Partial<Transaction>
     await db.transactions.put(next)
     if (next.isDemo) await db.settings.delete(DEMO_PURGE_KEY)
     const affectsReconciliation = (['statementId', 'transactionCurrency', 'transactionAmountMinor',
-      'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'directionEvidence', 'directionResolution', 'flags', 'reviewStatus', 'isDemo'] as const)
+      'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'directionEvidence', 'directionResolution', 'bankColumnAmounts', 'flags', 'reviewStatus', 'isDemo'] as const)
       .some(key => current[key] !== next[key])
     const statements = affectsReconciliation ? await rebuildStatementStates([current.statementId, next.statementId]) : []
     await bumpLedgerRevision()
@@ -322,7 +322,10 @@ async function applyBackupPayload(payload: BackupPayload, storedNotes: Array<{ t
       if (current && (hasResolvedDirection(current) !== hasResolvedDirection(row) || effectiveDirection(current) !== effectiveDirection(row))) {
         throw new Error(`人工方向决定冲突，拒绝覆盖：${row.id}`)
       }
-      if (current && Boolean(current.postingExclusion) !== Boolean(row.postingExclusion)) {
+      if (current && bankColumnSelectionKey(current) !== bankColumnSelectionKey(row)) {
+        throw new Error(`银行金额来源或人工选择冲突，拒绝覆盖：${row.id}`)
+      }
+      if (current && (Boolean(current.postingExclusion) !== Boolean(row.postingExclusion) || isPostingExcluded(current) !== isPostingExcluded(row))) {
         throw new Error(`入账排除依据冲突，拒绝覆盖：${row.id}`)
       }
     }

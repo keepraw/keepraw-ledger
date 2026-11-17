@@ -3,12 +3,12 @@ import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, addMonths, parseDateInput } from '../core/dates'
 import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
-import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
+import type { BankId, BankColumnAmount, NamedAmount, StatementSummary } from '../core/types'
 import { itemCenterX, pageRows, type TextRow } from './pdfLayout'
 import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'boc_pdf'
-const PARSER_VERSION = '2.0.0'
+const PARSER_VERSION = '2.1.0'
 
 /**
  * Bank of China merged text PDF statement.
@@ -368,7 +368,7 @@ const DESCRIPTION_ATTACH_TOLERANCE = 13
  */
 function locateTransactionHeaderBand(
   rows: TextRow[],
-): { depositCenter: number; expenditureCenter: number } | null {
+): { depositCenter: number; expenditureCenter: number; cardCenter: number } | null {
   const anchorIndex = rows.findIndex((row) => /Last Four/i.test(row.text) || /卡号后四位/.test(row.text))
   if (anchorIndex === -1) return null
   const anchorY = rows[anchorIndex]!.y
@@ -385,7 +385,10 @@ function locateTransactionHeaderBand(
   }
   if (deposit.length === 0 || expenditure.length === 0) return null
   const average = (values: number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length
-  return { depositCenter: average(deposit), expenditureCenter: average(expenditure) }
+  const card = rows.flatMap(row => Math.abs(row.y - anchorY) <= 30 ? row.items : [])
+    .filter(item => /^(卡号后四位|Last Four)$/i.test(item.text.trim())).map(itemCenterX)
+  if (!card.length) return null
+  return { depositCenter: average(deposit), expenditureCenter: average(expenditure), cardCenter: average(card) }
 }
 
 function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): ParsedTransaction[] {
@@ -401,7 +404,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
       }
       continue
     }
-    const { depositCenter, expenditureCenter } = headerBand
+    const { depositCenter, expenditureCenter, cardCenter } = headerBand
 
     const fragments: Fragment[] = []
     const transactionRows: Array<RowRef & { currency: string }> = []
@@ -434,6 +437,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
       const built = buildTransaction(entry, fragments, {
         depositCenter,
         expenditureCenter,
+        cardCenter,
         fallbackCardLast4,
         sourceRow: index,
         currency: entry.currency,
@@ -448,6 +452,7 @@ interface ColumnConfig {
   currency: string
   depositCenter: number
   expenditureCenter: number
+  cardCenter: number
   /** Statement level card last4, used when a row has no readable card digits. */
   fallbackCardLast4: string
   sourceRow: number
@@ -456,32 +461,42 @@ interface ColumnConfig {
 function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnConfig): ParsedTransaction | null {
   const { row, pageNumber } = entry
   const dateItems = row.items.filter((item) => ISO_DATE_RE.test(item.text.trim()) || COMPACT_DATE_RE.test(item.text.trim()))
-  if (dateItems.length < 2) return null
+  if (dateItems.length !== 2) throw new ParseError('同一视觉行含多组交易日期，不能证明金额属于同一交易，整份账单未导入', 'ambiguous_transaction_structure')
   const transactionDate = parseDateInput(dateItems[0]!.text.trim())
   const postingDate = parseDateInput(dateItems[1]!.text.trim()) ?? transactionDate
   if (!transactionDate) return null
 
-  const cardItem = row.items.find(
-    (item) => /^\d{4}$/.test(item.text.trim()) && item.x > dateItems[1]!.x + dateItems[1]!.width,
-  )
+  const cardItems = row.items.filter(item => /^\d{4}$/.test(item.text.trim()) && Math.abs(itemCenterX(item) - config.cardCenter) <= 30)
+  if (cardItems.length !== 1) throw new ParseError('交易卡号锚点缺失或重复，不能合并金额列', 'ambiguous_transaction_structure')
+  const cardItem = cardItems[0]
   const rowCardLast4 = cardItem?.text.trim() ?? config.fallbackCardLast4
   if (!rowCardLast4) return null
 
-  // Validate EVERY occupied amount column. Source signs cannot override the
-  // column's direction, and an invalid companion amount cannot be hidden.
-  const columnAmounts: Array<{ minor: number; direction: Direction }> = []
-  for (const item of row.items) {
-    if (item.x < config.depositCenter - 45) continue
+  // Headers bind columns geometrically; input text order has no financial meaning.
+  const columnAmounts: BankColumnAmount[] = []
+  const amountItems = row.items.filter(item => item.x >= Math.min(config.depositCenter, config.expenditureCenter) - 45)
+  for (const item of amountItems) {
     const center = itemCenterX(item)
-    const direction: Direction = center >= config.expenditureCenter - 45 ? 'debit' : 'credit'
+    const creditDistance = Math.abs(center - config.depositCenter), debitDistance = Math.abs(center - config.expenditureCenter)
+    if (Math.min(creditDistance, debitDistance) > 45 || creditDistance === debitDistance) {
+      throw new ParseError('金额无法唯一定位到银行存入/支出列', 'ambiguous_transaction_structure')
+    }
+    const direction = debitDistance < creditDistance ? 'debit' : 'credit'
     const parsed = requireTransactionAmount(parseAmountToMinor(item.text.trim(), config.currency), config.sourceRow)
-    columnAmounts.push({ minor: parsed.minor, direction })
+    if (columnAmounts.some(amount => amount.direction === direction)) {
+      throw new ParseError('同一金额列含多个值，不能证明是一笔交易，整份账单未导入', 'ambiguous_transaction_structure')
+    }
+    columnAmounts.push({ amountMinor: parsed.minor, direction, currency: config.currency, rawText: item.text })
   }
-  // Both columns are ambiguous. Retain the debit column deterministically,
-  // regardless of PDF run order; both original amounts remain in rawText.
-  const selectedAmount = requireTransactionAmount(columnAmounts.find(amount => amount.direction === 'debit') ?? columnAmounts[0] ?? null, config.sourceRow)
-  const directionConflict = new Set(columnAmounts.map(amount => amount.direction)).size > 1
-  const amounts = resolveBankAmounts(selectedAmount.minor, selectedAmount.minor, selectedAmount.direction, 'magnitude', directionConflict)
+  const debit = columnAmounts.find(amount => amount.direction === 'debit')
+  const credit = columnAmounts.find(amount => amount.direction === 'credit')
+  const directionConflict = !!debit && !!credit
+  // Frozen identity projection ONLY: no direction or amount is accepted financially
+  // for a dual-column row until an explicit decision selects one bank column.
+  const identityAmount = requireTransactionAmount(debit ?? credit ?? null, config.sourceRow)
+  const amounts = resolveBankAmounts(identityAmount.amountMinor, identityAmount.amountMinor, identityAmount.direction, 'magnitude', directionConflict)
+  const bankColumnAmounts: ParsedTransaction['bankColumnAmounts'] = debit && credit
+    ? { source: 'boc_pdf', rowBinding: 'single_transaction_anchor', debit, credit } : undefined
 
   const descriptionStart = cardItem ? cardItem.x + cardItem.width : 0
   const parts: Array<{ y: number; text: string }> = []
@@ -513,7 +528,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
 
   const cleaned = cleanDescription(rawDescription)
   const bankToken = extractSourceTypeToken(cleaned)
-  const type = legacyTypeForIdentity(bankToken, selectedAmount.direction)
+  const type = legacyTypeForIdentity(bankToken, identityAmount.direction)
 
   return {
     cardLast4: rowCardLast4,
@@ -525,11 +540,12 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     ...amounts,
     settlementCurrency: config.currency,
     type,
-    direction: selectedAmount.direction,
+    direction: identityAmount.direction,
+    ...(bankColumnAmounts ? { bankColumnAmounts } : {}),
     directionEvidence: directionConflict ? { kind: 'missing', detail: '中国银行同一行同时出现借记和贷记金额列，无法确定唯一方向' }
       : { kind: 'bank', detail: '中国银行借记/贷记金额列位置' },
     bankToken,
-    postingExclusion: postingExclusionFromBankToken(bankToken, row.text, selectedAmount.direction),
+    postingExclusion: postingExclusionFromBankToken(bankToken, row.text, identityAmount.direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.95 : 0.6,
     sourcePage: pageNumber,
     sourceRow: config.sourceRow,

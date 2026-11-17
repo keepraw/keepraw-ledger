@@ -1,4 +1,4 @@
-import { hasUnresolvedDirection, effectiveDirection, effectiveAmountForDirection } from '../../core/direction'
+import { hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription, matchesTransactionDescription } from '../../core/descriptionNormalizer'
 import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
@@ -54,7 +54,7 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
     }
     // Currency groups stay in code order; only amounts within a group change direction.
     if (sortKey === 'settlementAmountMinor') {
-      const currencyOrder = compareDates(a.settlementCurrency, b.settlementCurrency)
+      const currencyOrder = compareDates(effectiveCurrencyForDirection(a), effectiveCurrencyForDirection(b))
       if (currencyOrder) return currencyOrder
       const amountA = effectiveAmountForDirection(a) ?? a.settlementAmountMinor, amountB = effectiveAmountForDirection(b) ?? b.settlementAmountMinor
       const amountOrder = amountA < amountB ? -1 : amountA > amountB ? 1 : 0
@@ -236,7 +236,7 @@ export function TransactionsPage() {
                     </td>
                     <td className="nowrap muted">{tx.settlementCurrency}</td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
                       {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small>
                         : effectiveAmountForDirection(tx) === null ? <small>方向待解决，未计入统计</small> : null}
                     </td>

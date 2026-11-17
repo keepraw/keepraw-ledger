@@ -1,4 +1,4 @@
-import { hasAmountDirectionConflict, hasResolvedDirection, effectiveDirection, validDirectionMetadata, preserveLegacyPostingExclusion } from '../core/direction'
+import { isPostingExcluded, bankColumnSelectionKey, hasAmountDirectionConflict, hasResolvedDirection, effectiveDirection, validDirectionMetadata, preserveLegacyPostingExclusion } from '../core/direction'
 import { transactionId } from '../core/dedupe'
 import { transactionFingerprint } from '../core/identity'
 import { transactionDisplayDescription } from '../core/descriptionNormalizer'
@@ -19,14 +19,16 @@ export const NATIVE_LEDGER_RAW_COLUMNS = [...NATIVE_LEDGER_COLUMNS, '原始描�
 export const NATIVE_LEDGER_POSTING_COLUMNS = [...NATIVE_LEDGER_RAW_COLUMNS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '入账排除依据'] as const
 export const NATIVE_LEDGER_DIRECTION_COLUMNS = [...NATIVE_LEDGER_POSTING_COLUMNS, '方向复核标记'] as const
 
-export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_DIRECTION_COLUMNS, '银行方向依据', '人工方向决定', '完整复核标记'] as const
+export const NATIVE_LEDGER_DECISION_COLUMNS = [...NATIVE_LEDGER_DIRECTION_COLUMNS, '银行方向依据', '人工方向决定', '完整复核标记'] as const
+
+export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_DECISION_COLUMNS, '银行双列金额来源'] as const
 
 /** Exact order, exact spelling, no duplicate, extra or conflicting columns. */
-export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | null {
+export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | 27 | null {
   const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS
-    : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : header.length === 23 ? NATIVE_LEDGER_DIRECTION_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
+    : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : header.length === 23 ? NATIVE_LEDGER_DIRECTION_COLUMNS : header.length === 26 ? NATIVE_LEDGER_DECISION_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
   return header.length === schema.length && schema.every((name, index) => header[index] === name)
-    ? header.length as 20 | 21 | 22 | 23 | 26 : null
+    ? header.length as 20 | 21 | 22 | 23 | 26 | 27 : null
 }
 
 const bankEntries = Object.entries(BANKS)
@@ -40,7 +42,7 @@ const positiveInteger = (value: unknown): number | null => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
-export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26) {
+export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26 | 27) {
   const rows: NormalizedLegacyRow[] = []
   const anomalies: LegacyAnomaly[] = []
   const reviewIssues: NonNullable<LegacyPreview['reviewIssues']> = []
@@ -128,26 +130,28 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 2
     }
     let directionEvidence: Transaction['directionEvidence']
     let directionResolution: Transaction['directionResolution']
+    let bankColumnAmounts: Transaction['bankColumnAmounts']
     let flags: Transaction['flags'] = []
-    if (width === 26) {
+    if (width >= 26) {
       try {
         directionEvidence = blank(cells[23]) ? undefined : JSON.parse(text(cells[23]))
         directionResolution = blank(cells[24]) ? undefined : JSON.parse(text(cells[24]))
         flags = JSON.parse(text(cells[25]))
-        if (!validDirectionMetadata({ direction, directionEvidence, directionResolution }) || !Array.isArray(flags) ||
+        bankColumnAmounts = width >= 27 && !blank(cells[26]) ? JSON.parse(text(cells[26])) : undefined
+        if (!validDirectionMetadata({ bank, direction, directionEvidence, directionResolution, bankColumnAmounts, rawText: text(cells[16]) }) || !Array.isArray(flags) ||
           flags.some(flag => !REVIEW_FLAGS.includes(flag)) ||
           flags.includes('amount_direction_unclear') !== (cells[22] === 'amount_direction_unclear')) throw new Error('invalid direction metadata')
       } catch { fail('invalid_field', '方向依据、人工决定或复核标记无效/冲突'); continue }
     }
-    const resolved = hasResolvedDirection({ direction, directionEvidence, directionResolution })
+    const resolved = hasResolvedDirection({ bank, direction, directionEvidence, directionResolution, bankColumnAmounts })
     if (!resolved && (hasAmountDirectionConflict(financial) || directionEvidence?.kind === 'missing' ||
       (width >= 23 && cells[22] === 'amount_direction_unclear')) && !flags.includes('amount_direction_unclear')) flags.push('amount_direction_unclear')
-    rows.push({ ...financial, directionEvidence, directionResolution, postingExclusion, description, rawDescription, category, confidence: 0,
+    rows.push({ ...financial, bankColumnAmounts, directionEvidence, directionResolution, postingExclusion, description, rawDescription, category, confidence: 0,
       // Old schemas lack general review flags; 26 columns explicitly retain
       // them and the human decision. Confidence zero is still unavailable.
       flags,
       rawText: text(cells[16]), sourceRow, cycleStart: null, cycleEnd: null,
-      native: { id, fingerprint, occurrence, reviewStatus, sourcePage, ...(width === 26 ? { reviewFlagsSource: 'native_export' as const } : {}), sourceFileName: text(cells[13]), sourceFileHash: text(cells[14]) } })
+      native: { id, fingerprint, occurrence, reviewStatus, sourcePage, ...(width >= 26 ? { reviewFlagsSource: 'native_export' as const } : {}), sourceFileName: text(cells[13]), sourceFileHash: text(cells[14]) } })
   }
   // An ID repeated within a workbook is ambiguous, even when financial fields
   // agree. Exclude every occurrence; never choose a winning spreadsheet row.
@@ -157,7 +161,7 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 2
     return false
   })
   if (valid.length) reviewIssues.push({ rowNumber: valid[0]!.sourceRow,
-    detail: `XLSX 未导出置信度、${width === 26 ? '' : width === 23 ? '除方向复核外的其他复核标记、' : '复核标记、'}账期、原来源行号或独立备注；置信度 0 仅表示不可恢复，不添加低置信度标记，不触发逐笔复核；有方向冲突时仍按独立标记复核，保留导出的复核状态，来源行号使用本工作簿行号。` +
+    detail: `XLSX 未导出置信度、${width >= 26 ? '' : width === 23 ? '除方向复核外的其他复核标记、' : '复核标记、'}账期、原来源行号或独立备注；置信度 0 仅表示不可恢复，不添加低置信度标记，不触发逐笔复核；有方向冲突时仍按独立标记复核，保留导出的复核状态，来源行号使用本工作簿行号。` +
       (width === 20 ? '20 列版本没有原始描述，使用交易描述，无法验证的身份行已排除。' : '身份描述按已知源文本清理规则验证；无法还原的身份行已排除。') })
   return { rows: valid, anomalies, totalRows, reviewIssues }
 }
@@ -177,7 +181,9 @@ export function compareNativeLedgerRows(rows: LegacyPreview['rows'], existing: T
       warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `交易标识冲突，拒绝覆盖：${row.id}` })
     } else if ((hasResolvedDirection(current) !== hasResolvedDirection(row) || effectiveDirection(current) !== effectiveDirection(row))) {
       warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `人工方向决定冲突，拒绝覆盖：${row.id}` })
-    } else if (Boolean(current.postingExclusion) !== Boolean(row.postingExclusion)) {
+    } else if (bankColumnSelectionKey(current) !== bankColumnSelectionKey(row)) {
+      warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `银行金额来源或人工选择冲突，拒绝覆盖：${row.id}` })
+    } else if ((Boolean(current.postingExclusion) !== Boolean(row.postingExclusion) || isPostingExcluded(current) !== isPostingExcluded(row))) {
       warnings.push({ rowNumber: row.sourceRow, blocking: true, detail: `入账排除依据冲突，拒绝覆盖：${row.id}` })
     } else duplicateIds.add(row.id)
   }

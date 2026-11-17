@@ -1,4 +1,4 @@
-import { hasAmountDirectionConflict } from './direction'
+import { bankColumnSelectionKey, hasAmountDirectionConflict } from './direction'
 import { inferCategory } from './classify'
 import { assignOccurrences, assignStoredOccurrences, detectDuplicates, transactionId } from './dedupe'
 import { transactionFingerprint, statementKey } from './identity'
@@ -82,7 +82,7 @@ export function ingestParsedStatement(
     if (!tx.transactionDate || !tx.postingDate) flags.push('date_missing')
     if (!rowCardLast4 || rowCardLast4 === '????') flags.push('card_missing')
     if (!tx.description || tx.description === '未识别交易') flags.push('description_unparsed')
-    if (tx.transactionAmountMinor === 0) flags.push('amount_missing')
+    if (tx.transactionAmountMinor === 0 && (!tx.bankColumnAmounts || tx.bankColumnAmounts.credit.amountMinor === 0)) flags.push('amount_missing')
 
     return {
       id: transactionId(fingerprint, occurrence),
@@ -99,6 +99,7 @@ export function ingestParsedStatement(
       settlementAmountMinor: tx.settlementAmountMinor,
       type: tx.type,
       direction: tx.direction,
+      ...(tx.bankColumnAmounts ? { bankColumnAmounts: tx.bankColumnAmounts } : {}),
       ...(tx.directionEvidence ? { directionEvidence: tx.directionEvidence } : {}),
       postingExclusion: tx.postingExclusion ?? null,
       category: inferCategory(tx.description) as Transaction['category'],
@@ -115,6 +116,15 @@ export function ingestParsedStatement(
       isDemo,
     }
   }), stored)
+
+  const storedById = new Map(stored.map(row => [row.id, row]))
+  for (const candidate of candidates) {
+    const current = storedById.get(candidate.id)
+    if (current && (current.bankColumnAmounts || candidate.bankColumnAmounts) &&
+      bankColumnSelectionKey({ bankColumnAmounts: current.bankColumnAmounts }) !== bankColumnSelectionKey({ bankColumnAmounts: candidate.bankColumnAmounts })) {
+      throw new Error(`已有交易标识的银行双列金额来源冲突，拒绝覆盖或静默去重：${candidate.id}`)
+    }
+  }
 
   if (duplicateImport) {
     const statement = existing.statements.find((row) => row.id === duplicateImport.statementId && !row.isDemo === !isDemo) ?? null

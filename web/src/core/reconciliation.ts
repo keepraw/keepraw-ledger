@@ -1,4 +1,4 @@
-import { hasUnresolvedDirection, effectiveAmountForDirection, effectiveDirection } from './direction'
+import { isPostingExcluded, hasUnresolvedDirection, effectiveCurrencyForDirection, effectiveAmountForDirection, effectiveDirection } from './direction'
 import { formatMinor } from './money'
 import type {
   ReconciliationResult,
@@ -133,9 +133,9 @@ export function reconcileStatementTransactions(
     if (tx.statementId !== statement.id) continue
     if (tx.reviewStatus === 'rejected') continue
     if (hasUnresolvedDirection(tx)) directionConflicts++
-    if (tx.postingExclusion) continue
+    if (isPostingExcluded(tx)) continue
     transactionCount += 1
-    if (tx.settlementCurrency !== currency) {
+    if (effectiveCurrencyForDirection(tx) !== currency) {
       ignoredCurrency += 1
       continue
     }

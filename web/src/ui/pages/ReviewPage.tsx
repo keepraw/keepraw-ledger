@@ -1,4 +1,4 @@
-import { hasUnresolvedDirection, effectiveDirection, effectiveAmountForDirection } from '../../core/direction'
+import { needsBankColumnChoice, hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription } from '../../core/descriptionNormalizer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewPagination, useReviewPagination } from '../components/ReviewPagination'
@@ -268,7 +268,7 @@ export function ReviewPage() {
                               {transactionDisplayDescription(tx)}
                             </td>
                             <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                              {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, tx.settlementCurrency)}
+                              {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
                       {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small> : null}
                             </td>
                             <td>
@@ -326,7 +326,7 @@ export function ReviewPage() {
                       {transactionDisplayDescription(tx)}
                     </td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
                       {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small> : null}
                     </td>
                     <td>
@@ -500,22 +500,31 @@ function DirectionReview({ transaction: tx, busy, onResolve }: {
   const [choice, setChoice] = useState<'' | 'debit' | 'credit'>('')
   const reliable = tx.directionEvidence?.kind === 'bank'
   const selected = reliable ? tx.direction : choice
-  const label = selected === 'credit' ? '贷记' : '借记'
-  const preview: Transaction | null = selected ? { ...tx, directionResolution: {
+  const missingColumns = needsBankColumnChoice(tx) && !tx.bankColumnAmounts
+  const resolution: Transaction['directionResolution'] = selected ? {
     method: reliable ? 'accept_bank' : 'user_choice', direction: selected,
-  } } : null
+    ...(tx.bankColumnAmounts ? { amountSource: selected === 'debit' ? 'debit_column' as const : 'credit_column' as const } : {}),
+  } : undefined
+  const label = selected === 'credit' ? '贷记' : '借记'
+  const preview: Transaction | null = resolution && !missingColumns ? { ...tx, directionResolution: resolution } : null
   return <div className="stack" data-testid="direction-review">
     <p>{reliable ? `银行方向：${tx.direction === 'debit' ? '借记' : '贷记'}；金额符号与方向矛盾。` : '银行方向缺失或矛盾；当前方向仅为占位，必须明确选择。'}
       {tx.directionEvidence?.detail ?? '旧记录未保留独立银行方向依据。'}</p>
+    {tx.bankColumnAmounts ? <div>
+      <p>银行支出列（借记）：{tx.bankColumnAmounts.debit.currency} {tx.bankColumnAmounts.debit.rawText}</p>
+      <p>银行存入列（贷记）：{tx.bankColumnAmounts.credit.currency} {tx.bankColumnAmounts.credit.rawText}</p>
+      <p>选择方向即选择对应金额列，另一列不计入。下列兼容金额仅用于原身份校验。</p>
+    </div> : null}
+    {missingColumns ? <p role="alert">旧记录没有分别保存两列金额来源；原方向选择未绑定金额，不能据此入账。需要原始 PDF 的独立金额证据，不能从兼容金额补造另一列。</p> : null}
     <p>原币：{formatMinor(tx.transactionAmountMinor, tx.transactionCurrency)}；原始入账：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</p>
     <details><summary>原始金额证据</summary><pre>{tx.rawText}</pre></details>
-    {!reliable ? <label>选择入账方向<select aria-label="选择入账方向" value={choice} disabled={busy}
+    {!reliable ? <label>选择入账方向<select aria-label="选择入账方向" value={choice} disabled={busy || missingColumns}
       onChange={event => setChoice(event.target.value as typeof choice)}>
-      <option value="">请选择</option><option value="debit">借记</option><option value="credit">贷记</option>
+      <option value="">请选择</option><option value="debit">借记{tx.bankColumnAmounts ? ` · 支出列 ${tx.bankColumnAmounts.debit.currency} ${tx.bankColumnAmounts.debit.rawText}` : ''}</option><option value="credit">贷记{tx.bankColumnAmounts ? ` · 存入列 ${tx.bankColumnAmounts.credit.currency} ${tx.bankColumnAmounts.credit.rawText}` : ''}</option>
     </select></label> : null}
-    {preview ? <p>确认后按{label}{selected === 'debit' ? '正' : '负'}绝对值计算：原币 {formatMinor(effectiveAmountForDirection(preview, 'transaction')!, tx.transactionCurrency)}，入账 {formatMinor(effectiveAmountForDirection(preview)!, tx.settlementCurrency)}；保留原始金额。</p> : null}
-    <button className="btn btn-sm" disabled={busy || !selected} onClick={() => {
-      if (selected) void onResolve({ method: reliable ? 'accept_bank' : 'user_choice', direction: selected })
+    {preview ? <p>确认后按{label}{selected === 'debit' ? '正' : '负'}绝对值计算：原币 {formatMinor(effectiveAmountForDirection(preview, 'transaction')!, effectiveCurrencyForDirection(preview, 'transaction'))}，入账 {formatMinor(effectiveAmountForDirection(preview)!, effectiveCurrencyForDirection(preview))}；保留原始金额。</p> : null}
+    <button className="btn btn-sm" disabled={busy || !selected || missingColumns} onClick={() => {
+      if (resolution && !missingColumns) void onResolve(resolution)
     }}>{reliable ? `接受银行${label}方向` : '按所选方向入账'}</button>
   </div>
 }

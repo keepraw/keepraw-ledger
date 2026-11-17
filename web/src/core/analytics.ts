@@ -1,4 +1,4 @@
-import { effectiveAmountForDirection, effectiveDirection, isPostedTransaction } from './direction'
+import { effectiveCurrencyForDirection, effectiveAmountForDirection, effectiveDirection, isPostedTransaction } from './direction'
 import { monthKey } from './dates'
 import { normalizeCurrencyCode } from './money'
 import { summarizeTransactions, type DirectionTotals } from './reconcile'
@@ -46,7 +46,7 @@ export function summarize(transactions: Transaction[]): DashboardSummary {
 export function monthlyTrend(transactions: Transaction[]): Array<{ month: string; debit: number; credit: number }> {
   const buckets = new Map<string, { debit: number; credit: number }>()
   for (const tx of transactions) {
-    if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
+    if (normalizeCurrencyCode(effectiveCurrencyForDirection(tx)) !== 'CNY') continue
     if (tx.reviewStatus === 'rejected' || !tx.transactionDate) continue
     const key = monthKey(tx.transactionDate)
     const bucket = buckets.get(key) ?? { debit: 0, credit: 0 }
@@ -63,7 +63,7 @@ export function monthlyTrend(transactions: Transaction[]): Array<{ month: string
 export function groupBy(transactions: Transaction[], key: (tx: Transaction) => string): Array<{ label: string; value: number }> {
   const totals = new Map<string, number>()
   for (const tx of transactions) {
-    if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
+    if (normalizeCurrencyCode(effectiveCurrencyForDirection(tx)) !== 'CNY') continue
     if (tx.reviewStatus === 'rejected') continue
     if (!isPostedTransaction(tx) || effectiveDirection(tx) !== 'debit') continue
     const label = key(tx)
@@ -77,7 +77,7 @@ export function groupBy(transactions: Transaction[], key: (tx: Transaction) => s
 export function groupByBank(transactions: Transaction[]): Array<{ label: string; value: number }> {
   const totals = new Map<string, number>()
   for (const tx of transactions) {
-    if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
+    if (normalizeCurrencyCode(effectiveCurrencyForDirection(tx)) !== 'CNY') continue
     if (!isPostedTransaction(tx) || effectiveDirection(tx) !== 'debit') continue
     totals.set(tx.bank, (totals.get(tx.bank) ?? 0) + (effectiveAmountForDirection(tx) ?? 0))
   }
@@ -118,6 +118,6 @@ export function untrustedAmount(transactions: Transaction[], statements: Stateme
     statements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').map((s) => s.id),
   )
   return transactions
-    .filter((tx) => untrusted.has(tx.statementId) && isPostedTransaction(tx) && normalizeCurrencyCode(tx.settlementCurrency) === 'CNY')
+    .filter((tx) => untrusted.has(tx.statementId) && isPostedTransaction(tx) && normalizeCurrencyCode(effectiveCurrencyForDirection(tx)) === 'CNY')
     .reduce((sum, tx) => sum + Math.abs((effectiveAmountForDirection(tx) ?? 0)), 0)
 }

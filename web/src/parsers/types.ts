@@ -62,6 +62,7 @@ export interface ParsedTransaction {
   postingExclusion?: import('../core/types').PostingExclusion | null
   direction: Direction
   directionEvidence?: import('../core/types').DirectionEvidence
+  bankColumnAmounts?: import('../core/types').BankColumnAmounts
   /** Conflict in raw bank evidence before sign normalization. */
   amountDirectionUnclear?: boolean
   /** The bank's own structured type token when the statement provides one. */

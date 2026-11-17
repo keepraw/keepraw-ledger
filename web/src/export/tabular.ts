@@ -37,6 +37,7 @@ export const EXPORT_COLUMNS = [
   { key: 'directionEvidence', header: '银行方向依据' },
   { key: 'directionResolution', header: '人工方向决定' },
   { key: 'flags', header: '完整复核标记' },
+  { key: 'bankColumnAmounts', header: '银行双列金额来源' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -74,6 +75,7 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.directionEvidence ? JSON.stringify(transaction.directionEvidence) : '',
     transaction.directionResolution ? JSON.stringify(transaction.directionResolution) : '',
     JSON.stringify(transaction.flags),
+    transaction.bankColumnAmounts ? JSON.stringify(transaction.bankColumnAmounts) : '',
   ]
 }
 

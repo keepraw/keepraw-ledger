@@ -54,7 +54,25 @@ export type Direction = 'debit' | 'credit'
 /** Independent bank evidence. Missing includes contradictory bank direction fields. */
 export interface DirectionEvidence { kind: 'bank' | 'missing'; detail: string }
 /** Explicit human decision; stored direction and signed source amounts remain immutable. */
-export interface DirectionResolution { method: 'accept_bank' | 'user_choice'; direction: Direction }
+export interface DirectionResolution {
+  method: 'accept_bank' | 'user_choice'
+  direction: Direction
+  /** Mandatory for BOC dual-column choices; absent for single-amount rows. */
+  amountSource?: 'debit_column' | 'credit_column'
+}
+export interface BankColumnAmount {
+  direction: Direction
+  rawText: string
+  amountMinor: number
+  currency: string
+}
+/** Two alternatives on ONE uniquely anchored BOC statement row, never two monetary legs. */
+export interface BankColumnAmounts {
+  source: 'boc_pdf'
+  rowBinding: 'single_transaction_anchor'
+  debit: BankColumnAmount
+  credit: BankColumnAmount
+}
 
 /** Independent evidence for excluding an informational, unposted original. */
 export interface PostingExclusion {
@@ -124,7 +142,9 @@ export interface Transaction {
   rawDescription: string
   transactionCurrency: string
   /** Normally positive = debit, negative = credit. Direction-review rows retain
-   * contradictory source signs as evidence instead of silently correcting them. */
+   * contradictory source signs as evidence instead of silently correcting them.
+   * BOC dual-column rows keep the old identity projection here; financial
+   * amounts MUST come from the explicitly selected bankColumnAmounts entry. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
@@ -135,6 +155,7 @@ export interface Transaction {
   reviewFlagsSource?: 'native_export'
   directionEvidence?: DirectionEvidence
   directionResolution?: DirectionResolution
+  bankColumnAmounts?: BankColumnAmounts
   postingExclusion?: PostingExclusion | null
   category: Category
   /** Parser confidence (0–1). Native XLSX history uses 0 for unavailable metadata;

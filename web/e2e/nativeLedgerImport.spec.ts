@@ -60,7 +60,7 @@ test('same native file incrementally recovers previously excluded rows and a sec
   expect(repeat.imports[0]).toMatchObject({ status: 'duplicate', transactionCount: 0 })
 })
 
-test('native 20-column preview, UI export, fresh-browser 26-column restoration and conflict protection', async ({ page, browser }, testInfo) => {
+test('native 20-column preview, UI export, fresh-browser 27-column restoration and conflict protection', async ({ page, browser }, testInfo) => {
   const origin = new URL(String(testInfo.project.use.baseURL)).origin
   await page.goto('/#/settings')
   await page.getByTestId('demo-toggle').uncheck()

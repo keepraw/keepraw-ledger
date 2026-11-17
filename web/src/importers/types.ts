@@ -58,6 +58,7 @@ export interface NormalizedLegacyRow {
   type: TransactionType
   direction: Direction
   directionEvidence?: import('../core/types').DirectionEvidence
+  bankColumnAmounts?: import('../core/types').BankColumnAmounts
   directionResolution?: import('../core/types').DirectionResolution
   postingExclusion?: import('../core/types').PostingExclusion | null
   category: Category
