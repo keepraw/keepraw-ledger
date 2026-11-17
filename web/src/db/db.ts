@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { repairDirectionFirst } from './directionFirstRepair'
 import { repairNativeLedgerConfidence } from './nativeConfidenceRepair'
 import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/types'
 
@@ -93,6 +94,7 @@ export class BillDatabase extends Dexie {
     // v5 repairs PR #48 metadata flags in the same atomic versionchange
     // transaction. An abort rolls back both row edits and the version bump.
     this.version(5).stores({}).upgrade(repairNativeLedgerConfidence)
+    this.version(6).stores({}).upgrade(repairDirectionFirst)
   }
 }
 

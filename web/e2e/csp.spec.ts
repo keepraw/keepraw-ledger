@@ -158,12 +158,16 @@ test('production startup, styles, themes, local PDF Worker and HTML/EML/XLSX imp
 })
 
 test('production JSON/ZIP downloads and fresh-context restores preserve rows, notes and original bytes', async ({ page, browser }) => {
+  // A genuine missing-description review task keeps the note editor reachable.
+  // Unknown business type no longer creates a review task.
+  const source = SYNTHETIC_CCB_HTML.replace('手机银行 按卡转账还款', '')
+  expect(source).not.toBe(SYNTHETIC_CCB_HTML)
   const errors: string[] = []
   observePolicy(page, errors)
   await page.goto('/#/settings')
   await page.getByTestId('demo-toggle').uncheck()
   await page.goto('/#/import')
-  await page.getByTestId('file-input').setInputFiles({ name: 'synthetic-csp.html', mimeType: 'text/html', buffer: Buffer.from(SYNTHETIC_CCB_HTML) })
+  await page.getByTestId('file-input').setInputFiles({ name: 'synthetic-csp.html', mimeType: 'text/html', buffer: Buffer.from(source) })
   await expect(page.getByTestId('import-row').first()).toContainText('解析成功')
   await page.goto('/#/review')
   await page.getByRole('button', { name: '交易复核' }).click()
@@ -183,7 +187,7 @@ test('production JSON/ZIP downloads and fresh-context restores preserve rows, no
     if (id === 'backup-full') {
       const zip = await JSZip.loadAsync(bytes)
       const original = Object.values(zip.files).find(file => !file.dir && file.name.startsWith('original-files/'))!
-      expect(await original.async('string')).toBe(SYNTHETIC_CCB_HTML)
+      expect(await original.async('string')).toBe(source)
       const database = Object.values(zip.files).find(file => file.name.endsWith('.json') && file.name !== 'manifest.json')!
       json = JSON.parse(await database.async('string'))
     } else json = JSON.parse(bytes.toString('utf8'))
@@ -207,7 +211,7 @@ test('production JSON/ZIP downloads and fresh-context restores preserve rows, no
       if (backup.name.endsWith('.zip')) {
         const event = restored.waitForEvent('download')
         await restored.getByRole('button', { name: '下载原始文件' }).click()
-        expect(await readFile((await (await event).path())!, 'utf8')).toBe(SYNTHETIC_CCB_HTML)
+        expect(await readFile((await (await event).path())!, 'utf8')).toBe(source)
       }
     } finally { await context.close() }
   }

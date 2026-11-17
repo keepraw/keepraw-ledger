@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { inferTransactionType } from '../src/core/classify'
+import { legacyTypeForIdentity } from '../src/core/classify'
 import { assignOccurrences, detectDuplicates, transactionId } from '../src/core/dedupe'
 import { transactionFingerprint } from '../src/core/identity'
 import {
@@ -81,21 +81,18 @@ describe('legacy export rows produce fingerprints', () => {
 
 describe('legacy inference forks token-dependent native types', () => {
   it('installment posting: native installment_payment vs legacy purchase', () => {
-    const description = '1/3期-商户分期-示例通讯-分3期'
-    expect(inferTransactionType('分期扣款', description, 'debit')).toBe('installment_payment')
-    expect(inferTransactionType('', description, 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('分期扣款', 'debit')).toBe('installment_payment')
+    expect(legacyTypeForIdentity('', 'debit')).toBe('purchase')
   })
 
   it('unprefixed cashback: native cashback vs legacy payment', () => {
-    const description = '美食天天乐-示例商户'
-    expect(inferTransactionType('刷卡金', description, 'credit')).toBe('cashback')
-    expect(inferTransactionType('', description, 'credit')).toBe('payment')
+    expect(legacyTypeForIdentity('刷卡金', 'credit')).toBe('cashback')
+    expect(legacyTypeForIdentity('', 'credit')).toBe('payment')
   })
 
   it('prefixed purchase agrees on both paths', () => {
-    const description = '消费 支付宝-示例餐厅'
-    expect(inferTransactionType('消费', description, 'debit')).toBe('purchase')
-    expect(inferTransactionType('', description, 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('消费', 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('', 'debit')).toBe('purchase')
   })
 })
 

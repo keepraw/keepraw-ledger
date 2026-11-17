@@ -1,3 +1,4 @@
+import { needsBankColumnChoice, hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription } from '../../core/descriptionNormalizer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewPagination, useReviewPagination } from '../components/ReviewPagination'
@@ -14,7 +15,7 @@ import {
   ReconciliationChecks,
   ReviewStatusBadge,
   StatementStatusBadge,
-  TypeBadge,
+  DirectionBadge,
 } from '../components/ui'
 
 export function ReviewPage() {
@@ -38,7 +39,7 @@ export function ReviewPage() {
   const flaggedTransactions = useMemo(
     () =>
       visibleTransactions.filter(
-        (tx) => tx.reviewStatus === 'pending' || (tx.flags.length > 0 && tx.reviewStatus !== 'rejected'),
+        (tx) => tx.reviewStatus !== 'rejected' && (tx.reviewStatus === 'pending' || tx.flags.length > 0 || hasUnresolvedDirection(tx)),
       ),
     [visibleTransactions],
   )
@@ -138,7 +139,7 @@ export function ReviewPage() {
       {confirmation && confirmation.demoMode === state.demoMode ? (
         <dialog ref={confirmationRef} className="card card-pad stack" style={{ maxWidth: 'min(36rem, calc(100vw - 2rem))', margin: 'auto' }} onCancel={event => { if (reviewBusy) event.preventDefault(); else setConfirmation(null) }} aria-modal="true" aria-label={confirmation.decision === 'confirmed' ? '批量确认交易' : '批量排除交易'}>
           <h2>确定批量{confirmation.decision === 'confirmed' ? '确认' : '排除'} {confirmation.ids.length.toLocaleString('en-US')} 笔交易吗？</h2>
-          <p>{confirmation.decision === 'confirmed' ? '确认后会清空所选交易的复核标记。' : '排除后会保留原有标记，所选交易将退出复核队列。'}</p>
+          <p>{confirmation.decision === 'confirmed' ? '确认后会清空所选交易的复核标记；方向问题必须先逐笔明确解决。' : '排除后会保留原有标记，所选交易将退出复核队列。'}</p>
           {confirmation.decision === 'confirmed' && confirmation.ids.some(id => flaggedById.get(id)?.flags.includes('suspected_duplicate')) ? <p className="notice notice-warn">所选记录包含疑似重复交易：确认后会清除疑似重复标记，这些交易将不再因该标记进入复核队列。请先核对来源和交易次数。</p> : null}
           {confirmation.ids.some(id => !flaggedById.has(id)) ? <p role="alert">待复核记录已变化，请取消并重新选择。</p> : null}
           {reviewError ? <p className="notice notice-warn" role="alert">{reviewError}</p> : null}
@@ -255,7 +256,7 @@ export function ReviewPage() {
                           <th>交易日</th>
                           <th>描述</th>
                           <th className="num">金额</th>
-                          <th>类型</th>
+                          <th>方向</th>
                           <th>复核</th>
                         </tr>
                       </thead>
@@ -267,10 +268,11 @@ export function ReviewPage() {
                               {transactionDisplayDescription(tx)}
                             </td>
                             <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                              {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
+                              {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
+                      {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small> : null}
                             </td>
                             <td>
-                              <TypeBadge type={tx.type} />
+                              <DirectionBadge direction={effectiveDirection(tx)} />
                             </td>
                             <td>
                               <ReviewStatusBadge status={tx.reviewStatus} />
@@ -309,7 +311,7 @@ export function ReviewPage() {
                   <th>交易日</th>
                   <th>描述</th>
                   <th className="num">金额</th>
-                  <th>类型</th>
+                  <th>方向</th>
                   <th>原因</th>
                   <th>复核状态</th>
                   <th>操作</th>
@@ -324,13 +326,22 @@ export function ReviewPage() {
                       {transactionDisplayDescription(tx)}
                     </td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                      {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
+                      {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small> : null}
                     </td>
                     <td>
-                      <TypeBadge type={tx.type} />
+                      <DirectionBadge direction={effectiveDirection(tx)} />
                     </td>
                     <td>
                       <FlagList flags={tx.flags} />
+                      {hasUnresolvedDirection(tx) ? <DirectionReview transaction={tx} busy={reviewBusy}
+                        onResolve={async resolution => {
+                          if (submitting.current) return
+                          submitting.current = true; setReviewBusy(true); setReviewError(null)
+                          try { await updateTransaction({ id: tx.id, directionResolution: resolution }) }
+                          catch (error) { setReviewError(error instanceof Error ? error.message : String(error)) }
+                          finally { submitting.current = false; setReviewBusy(false) }
+                        }} /> : null}
                       {tx.flags.includes('suspected_duplicate') ? (
                         <DuplicateComparison
                           transaction={tx}
@@ -348,7 +359,7 @@ export function ReviewPage() {
                     </td>
                     <td>
                       <div className="row row-tight">
-                        <button className="btn btn-sm" type="button" disabled={reviewBusy} onClick={() => void confirmTransaction(tx, 'confirmed')}>
+                        <button className="btn btn-sm" type="button" disabled={reviewBusy || hasUnresolvedDirection(tx)} onClick={() => void confirmTransaction(tx, 'confirmed')}>
                           确认
                         </button>
                         <button className="btn btn-sm btn-danger" type="button" disabled={reviewBusy} onClick={() => void confirmTransaction(tx, 'rejected')}>
@@ -447,7 +458,7 @@ function SummaryRow({ label, minor, strong }: { label: string; minor: number | n
 export const REVIEW_FLAG_ORDER = Object.keys(REVIEW_FLAG_LABELS) as Array<keyof typeof REVIEW_FLAG_LABELS>
 
 const DIFFERENCE_LABELS: Record<string, string> = {
-  postingDate: '入账日', description: '描述', type: '类型', direction: '方向',
+  postingDate: '入账日', description: '描述', type: '历史身份类型（非业务事实）', direction: '方向',
   transactionCurrency: '原币币种', transactionAmountMinor: '原币金额',
 }
 
@@ -462,7 +473,7 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
       {candidates.length === 0 ? <p>当前账本无法定位候选，请对照原始文件核实。</p> : null}
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>记录</th><th>银行 / 卡尾号</th><th>交易日 / 入账日</th><th>描述</th><th>原币金额</th><th>结算金额</th><th>类型 / 方向</th><th>来源</th><th>复核状态</th></tr></thead>
+          <thead><tr><th>记录</th><th>银行 / 卡尾号</th><th>交易日 / 入账日</th><th>描述</th><th>原币金额</th><th>结算金额</th><th>方向</th><th>来源</th><th>复核状态</th></tr></thead>
           <tbody>{[transaction, ...candidates].map((row, index) => (
             <tr key={row.id}>
               <td>{index === 0 ? '当前交易' : '候选交易'}</td>
@@ -470,7 +481,7 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
               <td>{row.transactionDate} / {row.postingDate}</td><td>{transactionDisplayDescription(row)}</td>
               <td>{row.transactionCurrency} {formatMinor(row.transactionAmountMinor, row.transactionCurrency)}</td>
               <td>{row.settlementCurrency} {formatMinor(row.settlementAmountMinor, row.settlementCurrency)}</td>
-              <td><TypeBadge type={row.type} /> / {row.direction === 'credit' ? '贷记' : '借记'}</td>
+              <td><DirectionBadge direction={row.direction} /></td>
               <td>{row.sourceFileName}{row.sourceRow === null ? '' : `（来源行 ${row.sourceRow}）`}</td>
               <td><ReviewStatusBadge status={row.reviewStatus} /></td>
             </tr>
@@ -479,4 +490,41 @@ function DuplicateComparison({ transaction, candidates, candidateCount, differin
       </div>
     </details>
   )
+}
+
+/** No default for missing bank direction: the user must make an explicit choice. */
+function DirectionReview({ transaction: tx, busy, onResolve }: {
+  transaction: Transaction; busy: boolean
+  onResolve: (resolution: NonNullable<Transaction['directionResolution']>) => Promise<void>
+}) {
+  const [choice, setChoice] = useState<'' | 'debit' | 'credit'>('')
+  const reliable = tx.directionEvidence?.kind === 'bank'
+  const selected = reliable ? tx.direction : choice
+  const missingColumns = needsBankColumnChoice(tx) && !tx.bankColumnAmounts
+  const resolution: Transaction['directionResolution'] = selected ? {
+    method: reliable ? 'accept_bank' : 'user_choice', direction: selected,
+    ...(tx.bankColumnAmounts ? { amountSource: selected === 'debit' ? 'debit_column' as const : 'credit_column' as const } : {}),
+  } : undefined
+  const label = selected === 'credit' ? '贷记' : '借记'
+  const preview: Transaction | null = resolution && !missingColumns ? { ...tx, directionResolution: resolution } : null
+  return <div className="stack" data-testid="direction-review">
+    <p>{reliable ? `银行方向：${tx.direction === 'debit' ? '借记' : '贷记'}；金额符号与方向矛盾。` : '银行方向缺失或矛盾；当前方向仅为占位，必须明确选择。'}
+      {tx.directionEvidence?.detail ?? '旧记录未保留独立银行方向依据。'}</p>
+    {tx.bankColumnAmounts ? <div>
+      <p>银行支出列（借记）：{tx.bankColumnAmounts.debit.currency} {tx.bankColumnAmounts.debit.rawText}</p>
+      <p>银行存入列（贷记）：{tx.bankColumnAmounts.credit.currency} {tx.bankColumnAmounts.credit.rawText}</p>
+      <p>选择方向即选择对应金额列，另一列不计入。下列兼容金额仅用于原身份校验。</p>
+    </div> : null}
+    {missingColumns ? <p role="alert">旧记录没有分别保存两列金额来源；原方向选择未绑定金额，不能据此入账。需要原始 PDF 的独立金额证据，不能从兼容金额补造另一列。</p> : null}
+    <p>原币：{formatMinor(tx.transactionAmountMinor, tx.transactionCurrency)}；原始入账：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</p>
+    <details><summary>原始金额证据</summary><pre>{tx.rawText}</pre></details>
+    {!reliable ? <label>选择入账方向<select aria-label="选择入账方向" value={choice} disabled={busy || missingColumns}
+      onChange={event => setChoice(event.target.value as typeof choice)}>
+      <option value="">请选择</option><option value="debit">借记{tx.bankColumnAmounts ? ` · 支出列 ${tx.bankColumnAmounts.debit.currency} ${tx.bankColumnAmounts.debit.rawText}` : ''}</option><option value="credit">贷记{tx.bankColumnAmounts ? ` · 存入列 ${tx.bankColumnAmounts.credit.currency} ${tx.bankColumnAmounts.credit.rawText}` : ''}</option>
+    </select></label> : null}
+    {preview ? <p>确认后按{label}{selected === 'debit' ? '正' : '负'}绝对值计算：原币 {formatMinor(effectiveAmountForDirection(preview, 'transaction')!, effectiveCurrencyForDirection(preview, 'transaction'))}，入账 {formatMinor(effectiveAmountForDirection(preview)!, effectiveCurrencyForDirection(preview))}；保留原始金额。</p> : null}
+    <button className="btn btn-sm" disabled={busy || !selected || missingColumns} onClick={() => {
+      if (resolution && !missingColumns) void onResolve(resolution)
+    }}>{reliable ? `接受银行${label}方向` : '按所选方向入账'}</button>
+  </div>
 }

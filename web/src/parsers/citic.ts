@@ -1,9 +1,10 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'citic_eml'
 const PARSER_VERSION = '1.0.0'
@@ -347,14 +348,12 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
   const primary = settleSplit
 
   const direction = directionFromSignedCell(primary.negative)
-  assertCreditSign(txnSplit.negative, direction, rowIndex)
   const transactionCurrency = txnSplit.currency
-  const transactionAmountMinor = signForDirection(txnSplit.minor, direction)
-  const settlementAmountMinor = signForDirection(primary.minor, direction)
+  const amounts = resolveBankAmounts(txnSplit.negative ? -txnSplit.minor : txnSplit.minor,
+    primary.negative ? -primary.minor : primary.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   const description = cleaned || '未识别交易'
 
@@ -365,13 +364,13 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     rawDescription,
     description,
     transactionCurrency,
-    transactionAmountMinor,
+    ...amounts,
     settlementCurrency: primary.currency,
-    settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    directionEvidence: { kind: 'bank', detail: '中信银行入账金额符号：负为贷记' },
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,
     sourcePage: null,
     sourceRow: rowIndex,

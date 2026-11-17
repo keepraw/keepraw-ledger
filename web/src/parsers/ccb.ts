@@ -1,9 +1,10 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'ccb_eml'
 const PARSER_VERSION = '1.0.0'
@@ -303,13 +304,10 @@ function parseEightColRow(cells: string[], rowIndex: number, fallbackCardLast4: 
   const settleParsed = requireTransactionAmount(parseAmountToMinor(cells[7] ?? '', settleCurrency), rowIndex)
 
   const direction: Direction = settleParsed.negativeByFormat ? 'credit' : 'debit'
-  assertCreditSign(txnParsed.negativeByFormat, direction, rowIndex)
-  const transactionAmountMinor = signForDirection(txnParsed.minor, direction)
-  const settlementAmountMinor = signForDirection(settleParsed.minor, direction)
+  const amounts = resolveBankAmounts(txnParsed.minor, settleParsed.minor, direction)
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   const description = cleaned || '未识别交易'
 
@@ -320,13 +318,13 @@ function parseEightColRow(cells: string[], rowIndex: number, fallbackCardLast4: 
     rawDescription,
     description,
     transactionCurrency: txnCurrency,
-    transactionAmountMinor,
+    ...amounts,
     settlementCurrency: settleCurrency,
-    settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    directionEvidence: { kind: 'bank', detail: '建设银行入账金额符号：负为贷记' },
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,
     sourcePage: null,
     sourceRow: rowIndex,
@@ -345,12 +343,10 @@ function parseSixColRow(cells: string[], rowIndex: number, fallbackCardLast4: st
   const txnSplit = requireTransactionAmount(parseCombinedAmount(cells[4] ?? ''), rowIndex)
   const settleSplit = requireTransactionAmount(parseCombinedAmount(cells[5] ?? ''), rowIndex)
   const direction: Direction = settleSplit.negative ? 'credit' : 'debit'
-  assertCreditSign(txnSplit.negative, direction, rowIndex)
-  const transactionAmountMinor = signForDirection(txnSplit.minor, direction)
-  const settlementAmountMinor = signForDirection(settleSplit.minor, direction)
+  const amounts = resolveBankAmounts(txnSplit.negative ? -txnSplit.minor : txnSplit.minor,
+    settleSplit.negative ? -settleSplit.minor : settleSplit.minor, direction)
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settlementAmountMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const cleaned = cleanDescription(rawDescription)
   return {
     cardLast4,
@@ -359,13 +355,13 @@ function parseSixColRow(cells: string[], rowIndex: number, fallbackCardLast4: st
     rawDescription,
     description: cleaned || '未识别交易',
     transactionCurrency: txnSplit.currency,
-    transactionAmountMinor,
+    ...amounts,
     settlementCurrency: settleSplit.currency,
-    settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    directionEvidence: { kind: 'bank', detail: '建设银行入账金额符号：负为贷记' },
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: 0.85,
     sourcePage: null,
     sourceRow: rowIndex,

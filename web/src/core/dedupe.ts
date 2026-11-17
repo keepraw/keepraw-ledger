@@ -173,18 +173,19 @@ export function detectDuplicates(
 }
 
 /**
- * Loose key: bank + card + date + amount + type. Two rows that agree on all of these
- * but describe different merchants are *flagged*, never merged.
+ * Financial candidate key, independent of legacy business-type metadata.
+ * Different descriptions remain review candidates, never automatic merges.
  */
 function looseKey(row: FingerprintView): string {
-  return [row.bank, row.cardLast4, row.transactionDate ?? '', String(row.settlementAmountMinor), row.type].join('|')
+  return JSON.stringify([row.bank, row.cardLast4, row.transactionDate ?? '', row.settlementCurrency,
+    row.settlementAmountMinor, row.direction])
 }
 
 /** Transactions of one statement that share bank/card/date/amount but differ in text. */
 export function findSuspectedDuplicateGroups(transactions: Transaction[]): Map<string, string[]> {
   const groups = new Map<string, Transaction[]>()
   for (const tx of transactions) {
-    const key = [tx.bank, tx.cardLast4, tx.transactionDate ?? '', String(tx.settlementAmountMinor), tx.type].join('|')
+    const key = looseKey(tx)
     const bucket = groups.get(key) ?? []
     bucket.push(tx)
     groups.set(key, bucket)

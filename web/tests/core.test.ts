@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { currencyExponent, formatMinor, minorToDecimalString, parseAmountToMinor, sumMinor } from '../src/core/money'
 import { addDays, addMonths, monthEnd, parseDateInput, resolveShortDate } from '../src/core/dates'
-import { inferCategory, inferTransactionType } from '../src/core/classify'
+import { inferCategory, legacyTypeForIdentity } from '../src/core/classify'
 
 describe('money: integer minor units only', () => {
   it('parses bank formats into exact integer minor units', () => {
@@ -93,26 +93,26 @@ describe('dates', () => {
 
 describe('classification', () => {
   it('uses the bank token, not the merchant name', () => {
-    expect(inferTransactionType('消费', '消费 退款商户名称', 'debit')).toBe('purchase')
-    expect(inferTransactionType('还款', '还款 某某超市', 'credit')).toBe('payment')
-    expect(inferTransactionType('退货', '退货 支付宝-某商户', 'credit')).toBe('refund')
-    expect(inferTransactionType('分期扣款', '分期扣款 1/3期', 'debit')).toBe('installment_payment')
-    expect(inferTransactionType('分期利息', '分期利息', 'debit')).toBe('interest')
+    expect(legacyTypeForIdentity('消费', 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('还款', 'credit')).toBe('payment')
+    expect(legacyTypeForIdentity('退货', 'credit')).toBe('refund')
+    expect(legacyTypeForIdentity('分期扣款', 'debit')).toBe('installment_payment')
+    expect(legacyTypeForIdentity('分期利息', 'debit')).toBe('interest')
   })
 
   it('never flips direction because a merchant name contains a keyword', () => {
     // A purchase at a merchant whose name contains 退款 is still a debit.
-    expect(inferTransactionType('消费', '消费 退款服务店', 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('消费', 'debit')).toBe('purchase')
   })
 
   it('falls back to the column direction when the bank gives no token', () => {
-    expect(inferTransactionType('', '某不认识的商户', 'debit')).toBe('purchase')
-    expect(inferTransactionType('', '某不认识的商户', 'credit')).toBe('payment')
+    expect(legacyTypeForIdentity('', 'debit')).toBe('purchase')
+    expect(legacyTypeForIdentity('', 'credit')).toBe('payment')
   })
 
   it('assigns categories from the description', () => {
-    expect(inferCategory('消费 支付宝-联东谷餐厅', 'purchase')).toBe('餐饮')
-    expect(inferCategory('消费 财付通-京东商城', 'purchase')).toBe('购物')
-    expect(inferCategory('信用卡还款 转账还款', 'payment')).toBe('还款')
+    expect(inferCategory('消费 支付宝-联东谷餐厅')).toBe('餐饮')
+    expect(inferCategory('消费 财付通-京东商城')).toBe('购物')
+    expect(inferCategory('信用卡还款 转账还款')).toBe('未分类')
   })
 })

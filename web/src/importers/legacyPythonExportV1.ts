@@ -1,4 +1,6 @@
-import { inferCategory, classifyTransactionType, extractSourceTypeToken } from '../core/classify'
+import { postingExclusionFromBankToken } from '../core/direction'
+import { hasAmountDirectionConflict } from '../core/direction'
+import { inferCategory, legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { type IsoDate, parseDateInput } from '../core/dates'
 import { isSupportedCurrency, parseAmountToMinor } from '../core/money'
 import type { BankId, ReviewFlag } from '../core/types'
@@ -220,8 +222,7 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
     const bank = normalizeLegacyBank(at(row, 'bank'))
     const cardLast4 = normalizeLegacyCard(at(row, 'card_last4'))
     const direction = settlementAmountMinor < 0 ? 'credit' : 'debit'
-    const classification = classifyTransactionType(extractSourceTypeToken(rawDescription), direction, settlementAmountMinor)
-    const type = classification.type
+    const type = legacyTypeForIdentity(extractSourceTypeToken(rawDescription), direction)
     const confidenceRaw = at(row, 'confidence')
     const confidence =
       typeof confidenceRaw === 'number' && Number.isFinite(confidenceRaw)
@@ -229,7 +230,8 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
         : 0.5
 
     const flags: ReviewFlag[] = []
-    if (classification.requiresReview || (transactionAmountMinor < 0) !== (settlementAmountMinor < 0)) flags.push('transaction_type_unclear')
+
+    if (hasAmountDirectionConflict({ transactionAmountMinor, settlementAmountMinor, direction })) flags.push('amount_direction_unclear')
     if (confidence < 0.8) flags.push('low_confidence')
     if (!rawTransactionDate || !rawPostingDate) flags.push('date_missing')
     if (cardLast4 === '????') flags.push('card_missing')
@@ -250,7 +252,8 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
       settlementAmountMinor,
       type,
       direction,
-      category: inferCategory(rawDescription, type),
+      postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(rawDescription), rawDescription, direction),
+      category: inferCategory(rawDescription),
       confidence,
       flags,
       rawText: typeof rawTextCell === 'string' ? rawTextCell : String(rawTextCell ?? ''),

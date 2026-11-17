@@ -1,5 +1,7 @@
 import type { IsoDate } from '../core/dates'
 import type { BankId, Direction, StatementSummary, TransactionType } from '../core/types'
+import { hasAmountDirectionConflict } from '../core/direction'
+import { signForDirection } from '../core/classify'
 
 export type SourceType = 'pdf' | 'eml' | 'html' | 'text' | 'unknown'
 
@@ -50,14 +52,19 @@ export interface ParsedTransaction {
   rawDescription: string
   description: string
   transactionCurrency: string
-  /** Signed minor units: positive = expense, negative = credit. */
+  /** Signed minor units: normally positive = debit, negative = credit.
+   * Conflicting source signs are preserved and require direction review. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
+  /** Frozen legacy fingerprint metadata, not a financial classification. */
   type: TransactionType
-  /** Missing or contradictory authoritative type evidence; persist as review, never a guess. */
-  typeUncertain?: boolean
+  postingExclusion?: import('../core/types').PostingExclusion | null
   direction: Direction
+  directionEvidence?: import('../core/types').DirectionEvidence
+  bankColumnAmounts?: import('../core/types').BankColumnAmounts
+  /** Conflict in raw bank evidence before sign normalization. */
+  amountDirectionUnclear?: boolean
   /** The bank's own structured type token when the statement provides one. */
   bankToken: string
   confidence: number
@@ -114,10 +121,29 @@ export function requireTransactionAmount<T>(amount: T | null, rowIndex: number):
   return amount
 }
 
-/** For banks whose minus means credit, reject an explicit minus that would be lost. */
-export function assertCreditSign(negative: boolean, direction: 'credit' | 'debit', rowIndex: number): void {
-  if (negative && direction === 'debit') {
-    throw new ParseError(`第 ${rowIndex + 1} 行金额符号与交易方向冲突，整份账单未导入`, 'amount_direction_conflict')
+/** Call only after strict amount parsing. Signed columns use their source signs;
+ * section/column formats may print unsigned credit magnitudes. Detect conflicts
+ * BEFORE canonicalization and keep BOTH source amounts untouched when they disagree.
+ */
+export function resolveBankAmounts(
+  transactionMinor: number,
+  settlementMinor: number,
+  direction: Direction,
+  convention: 'signed' | 'magnitude' | 'abc' = 'signed',
+  sourceDirectionUnclear = false,
+): Pick<ParsedTransaction, 'transactionAmountMinor' | 'settlementAmountMinor' | 'amountDirectionUnclear'> {
+  const signsDisagree = convention !== 'abc' && transactionMinor !== 0 && settlementMinor !== 0 &&
+    (transactionMinor < 0) !== (settlementMinor < 0)
+  const directionConflict = convention === 'abc'
+    ? (direction === 'debit' && transactionMinor < 0) || (settlementMinor !== 0 && (settlementMinor < 0) !== (direction === 'debit'))
+    : convention === 'signed'
+    ? hasAmountDirectionConflict({ transactionAmountMinor: transactionMinor, settlementAmountMinor: settlementMinor, direction })
+    : direction === 'debit' && (transactionMinor < 0 || settlementMinor < 0)
+  const amountDirectionUnclear = sourceDirectionUnclear || signsDisagree || directionConflict
+  return {
+    transactionAmountMinor: amountDirectionUnclear ? transactionMinor : signForDirection(transactionMinor, direction),
+    settlementAmountMinor: amountDirectionUnclear ? settlementMinor : signForDirection(settlementMinor, direction),
+    amountDirectionUnclear,
   }
 }
 

@@ -20,7 +20,7 @@ export const EXPORT_COLUMNS = [
   { key: 'transactionAmountMinor', header: '交易金额' },
   { key: 'settlementCurrency', header: '入账币种' },
   { key: 'settlementAmountMinor', header: '入账金额' },
-  { key: 'type', header: '交易类型' },
+  { key: 'type', header: '历史类型（仅身份兼容）' },
   { key: 'direction', header: '借贷方向' },
   { key: 'category', header: '分类' },
   { key: 'reviewStatus', header: '复核状态' },
@@ -32,6 +32,12 @@ export const EXPORT_COLUMNS = [
   { key: 'fingerprint', header: '业务指纹' },
   { key: 'occurrence', header: '重复序号' },
   { key: 'rawDescription', header: '原始描述' },
+  { key: 'postingExclusion', header: '入账排除依据' },
+  { key: 'amountDirectionUnclear', header: '方向复核标记' },
+  { key: 'directionEvidence', header: '银行方向依据' },
+  { key: 'directionResolution', header: '人工方向决定' },
+  { key: 'flags', header: '完整复核标记' },
+  { key: 'bankColumnAmounts', header: '银行双列金额来源' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -64,6 +70,12 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.fingerprint,
     String(transaction.occurrence),
     transaction.rawDescription,
+    transaction.postingExclusion ? JSON.stringify(transaction.postingExclusion) : '',
+    transaction.flags.includes('amount_direction_unclear') ? 'amount_direction_unclear' : '',
+    transaction.directionEvidence ? JSON.stringify(transaction.directionEvidence) : '',
+    transaction.directionResolution ? JSON.stringify(transaction.directionResolution) : '',
+    JSON.stringify(transaction.flags),
+    transaction.bankColumnAmounts ? JSON.stringify(transaction.bankColumnAmounts) : '',
   ]
 }
 

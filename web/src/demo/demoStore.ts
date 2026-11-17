@@ -1,3 +1,4 @@
+import { applyReviewPatch } from '../core/direction'
 import { buildDemoDataset } from './demoData'
 import type { Snapshot } from '../db/repository'
 import type { Transaction } from '../core/types'
@@ -17,7 +18,7 @@ export function createDemoSnapshot(): Snapshot {
 export function patchDemoSnapshot(current: Snapshot, patch: Partial<Transaction> & { id: string }): Snapshot {
   const transaction = current.transactions.find(row => row.id === patch.id && row.isDemo)
   if (!transaction) throw new Error('演示模式只能修改演示交易。')
-  const next = { ...transaction, ...patch }
+  const next = applyReviewPatch(transaction, patch)
   if (!next.isDemo || !current.statements.some(row => row.id === next.statementId && row.isDemo)) {
     throw new Error('演示交易必须保留在演示账单中。')
   }

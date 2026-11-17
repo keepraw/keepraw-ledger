@@ -39,7 +39,7 @@ it('v3 → v4 removes only merchant, preserves every other property/store and su
   try {
     for (let count = 0; count < 2; count++) {
       await upgraded.open()
-      expect(upgraded.verno).toBe(5)
+      expect(upgraded.verno).toBe(6)
       const actual = await upgraded.transactions.toArray()
       expect(actual).toEqual(rows.map(withoutLegacyMerchant))
       expect(actual.every(row => !Object.hasOwn(row, 'merchant'))).toBe(true)

@@ -154,7 +154,7 @@ describe('transaction count', () => {
       makeTx('stmt-count', 6000),
       makeTx('stmt-count', 4000),
       makeTx('stmt-count', 99999, { reviewStatus: 'rejected' }),
-      makeTx('stmt-count', 50000, { type: 'installment_original' }),
+      makeTx('stmt-count', 50000, { type: 'installment_original', postingExclusion: { source: 'bank_original_marker', detail: '分期原始 合成银行字段' } }),
     ]
     const result = reconcileStatementTransactions(statement, txs)
     // Count excludes the rejected row; the installment original is excluded

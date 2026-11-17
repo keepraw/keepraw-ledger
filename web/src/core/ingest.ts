@@ -1,3 +1,4 @@
+import { bankColumnSelectionKey, hasAmountDirectionConflict } from './direction'
 import { inferCategory } from './classify'
 import { assignOccurrences, assignStoredOccurrences, detectDuplicates, transactionId } from './dedupe'
 import { transactionFingerprint, statementKey } from './identity'
@@ -76,12 +77,12 @@ export function ingestParsedStatement(
     const fingerprint = fingerprints[index]!
     const occurrence = occurrences[index]!.occurrence
     const flags: ReviewFlag[] = []
-    if (tx.typeUncertain) flags.push('transaction_type_unclear')
+    if (tx.directionEvidence?.kind === 'missing' || tx.amountDirectionUnclear || hasAmountDirectionConflict(tx)) flags.push('amount_direction_unclear')
     if (tx.confidence < 0.8) flags.push('low_confidence')
     if (!tx.transactionDate || !tx.postingDate) flags.push('date_missing')
     if (!rowCardLast4 || rowCardLast4 === '????') flags.push('card_missing')
     if (!tx.description || tx.description === '未识别交易') flags.push('description_unparsed')
-    if (tx.transactionAmountMinor === 0) flags.push('amount_missing')
+    if (tx.transactionAmountMinor === 0 && (!tx.bankColumnAmounts || tx.bankColumnAmounts.credit.amountMinor === 0)) flags.push('amount_missing')
 
     return {
       id: transactionId(fingerprint, occurrence),
@@ -98,7 +99,10 @@ export function ingestParsedStatement(
       settlementAmountMinor: tx.settlementAmountMinor,
       type: tx.type,
       direction: tx.direction,
-      category: inferCategory(tx.description, tx.type) as Transaction['category'],
+      ...(tx.bankColumnAmounts ? { bankColumnAmounts: tx.bankColumnAmounts } : {}),
+      ...(tx.directionEvidence ? { directionEvidence: tx.directionEvidence } : {}),
+      postingExclusion: tx.postingExclusion ?? null,
+      category: inferCategory(tx.description) as Transaction['category'],
       confidence: tx.confidence,
       flags,
       reviewStatus: flags.length > 0 ? 'pending' : 'ok',
@@ -112,6 +116,15 @@ export function ingestParsedStatement(
       isDemo,
     }
   }), stored)
+
+  const storedById = new Map(stored.map(row => [row.id, row]))
+  for (const candidate of candidates) {
+    const current = storedById.get(candidate.id)
+    if (current && (current.bankColumnAmounts || candidate.bankColumnAmounts) &&
+      bankColumnSelectionKey({ bankColumnAmounts: current.bankColumnAmounts }) !== bankColumnSelectionKey({ bankColumnAmounts: candidate.bankColumnAmounts })) {
+      throw new Error(`已有交易标识的银行双列金额来源冲突，拒绝覆盖或静默去重：${candidate.id}`)
+    }
+  }
 
   if (duplicateImport) {
     const statement = existing.statements.find((row) => row.id === duplicateImport.statementId && !row.isDemo === !isDemo) ?? null

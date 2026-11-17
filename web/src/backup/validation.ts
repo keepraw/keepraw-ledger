@@ -1,3 +1,4 @@
+import { validDirectionMetadata } from '../core/direction'
 import { BANKS, CATEGORIES, REVIEW_FLAGS, TRANSACTION_TYPES } from '../core/types'
 import { parseDateInput } from '../core/dates'
 import type { BackupPayload } from '../db/repository'
@@ -60,9 +61,11 @@ function transaction(value: unknown): value is Row {
     (!Object.hasOwn(value, 'merchant') || text(value.merchant)) &&
     date(value.transactionDate) && date(value.postingDate) && currency(value.transactionCurrency) && currency(value.settlementCurrency) &&
     integer(value.transactionAmountMinor) && integer(value.settlementAmountMinor) && oneOf(value.type, TRANSACTION_TYPES) &&
-    oneOf(value.direction, ['debit', 'credit']) && oneOf(value.category, CATEGORIES) &&
+    (value.postingExclusion === undefined || value.postingExclusion === null || (object(value.postingExclusion) &&
+      oneOf(value.postingExclusion.source, ['bocom_plan', 'bank_original_marker', 'legacy_installment_exclusion']) && text(value.postingExclusion.detail) && value.postingExclusion.detail.length > 0)) &&
+    (value.reviewFlagsSource === undefined || value.reviewFlagsSource === 'native_export') && oneOf(value.direction, ['debit', 'credit']) && validDirectionMetadata(value) && oneOf(value.category, CATEGORIES) &&
     typeof value.confidence === 'number' && Number.isFinite(value.confidence) && value.confidence >= 0 && value.confidence <= 1 &&
-    Array.isArray(value.flags) && value.flags.every((flag) => oneOf(flag, REVIEW_FLAGS)) &&
+    Array.isArray(value.flags) && value.flags.every((flag) => (flag === 'transaction_type_unclear' || oneOf(flag, REVIEW_FLAGS))) &&
     oneOf(value.reviewStatus, ['ok', 'pending', 'confirmed', 'rejected']) &&
     (value.sourcePage === null || (integer(value.sourcePage) && value.sourcePage > 0)) && nonnegative(value.sourceRow) &&
     integer(value.occurrence) && value.occurrence > 0 && typeof value.isDemo === 'boolean' &&

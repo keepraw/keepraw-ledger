@@ -1,3 +1,4 @@
+import { isPostingExcluded, hasUnresolvedDirection, effectiveCurrencyForDirection, effectiveAmountForDirection, effectiveDirection } from './direction'
 import { formatMinor } from './money'
 import type {
   ReconciliationResult,
@@ -109,7 +110,7 @@ export function describeReconciliationStatus(status: ReconciliationStatus): stri
  * Pure statement reconciliation. Single pass over `transactions`, O(n).
  *
  * - `rejected` rows are ignored (same as `reconcile.ts`).
- * - `installment_original` rows are ignored for the amount total: the bank
+ * - Source-evidenced unposted originals are ignored for the amount total: the bank
  *   prints the original purchase for information but only posts the per-cycle
  *   `installment_payment`. Counting both would double-count spending.
  * - Only rows in the statement currency are summed; other currencies are
@@ -125,17 +126,22 @@ export function reconcileStatementTransactions(
   let transactionCount = 0
   let transactionTotalMinor = 0
   let ignoredCurrency = 0
+  let directionConflicts = 0
+  let debitTotalMinor = 0, creditTotalMinor = 0
 
   for (const tx of transactions) {
     if (tx.statementId !== statement.id) continue
     if (tx.reviewStatus === 'rejected') continue
-    if (tx.type === 'installment_original') continue
+    if (hasUnresolvedDirection(tx)) directionConflicts++
+    if (isPostingExcluded(tx)) continue
     transactionCount += 1
-    if (tx.settlementCurrency !== currency) {
+    if (effectiveCurrencyForDirection(tx) !== currency) {
       ignoredCurrency += 1
       continue
     }
-    transactionTotalMinor += tx.settlementAmountMinor
+    transactionTotalMinor += (effectiveAmountForDirection(tx) ?? 0)
+    if (effectiveDirection(tx) === 'debit') debitTotalMinor += (effectiveAmountForDirection(tx) ?? 0)
+    else creditTotalMinor -= (effectiveAmountForDirection(tx) ?? 0)
   }
 
   // --- 1. transaction count -------------------------------------------------
@@ -169,7 +175,10 @@ export function reconcileStatementTransactions(
   }
 
   const differenceMinor = expected.expectedMinor - transactionTotalMinor
-  if (differenceMinor === 0) {
+  const directionTotalsMatch = expected.source !== 'detail' ||
+    (debitTotalMinor === statement.summary.newDebitMinor! + (statement.summary.chargeMinor ?? 0) + (statement.summary.interestMinor ?? 0) &&
+      creditTotalMinor === statement.summary.newCreditMinor)
+  if (differenceMinor === 0 && directionConflicts === 0 && directionTotalsMatch) {
     return {
       status: 'passed',
       transactionCount,
@@ -194,7 +203,7 @@ export function reconcileStatementTransactions(
     differenceMinor,
     currency,
     bankTotalAvailable: true,
-    reason: `${transactionCount} 笔合计 ${formatMinor(transactionTotalMinor, currency)}，银行金额为 ${formatMinor(expected.expectedMinor, currency)}，差额 ${formatMinor(differenceMinor, currency)}`,
+    reason: `${directionConflicts ? `${directionConflicts} 笔借贷方向冲突；` : ''}${!directionTotalsMatch ? '借记/贷记分项与银行汇总不符；' : ''}${transactionCount} 笔合计 ${formatMinor(transactionTotalMinor, currency)}，银行金额为 ${formatMinor(expected.expectedMinor, currency)}，差额 ${formatMinor(differenceMinor, currency)}`,
     expectedSource: expected.source,
   }
 }

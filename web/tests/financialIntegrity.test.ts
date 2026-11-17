@@ -120,10 +120,14 @@ describe('real parser → ingest → persistence financial integrity', () => {
     expect(await db.transactions.count()).toBe(0)
   })
 
-  it('CCB: a negative original leg cannot be overwritten by a default debit', async () => {
+  it('CCB: a conflicting negative original leg is saved with its source sign for review', async () => {
     const changed = SYNTHETIC_CCB_HTML.replace('<td>CNY</td><td>900.00</td>', '<td>CNY</td><td>CNY -900.00</td>')
-    await expect(importHtml(changed, 'direction-conflict')).rejects.toThrow('方向冲突')
-    expect(await db.transactions.count()).toBe(0)
+    const { parsed, result } = await importHtml(changed, 'direction-conflict')
+    expect(await db.transactions.count()).toBe(parsed.transactions.length)
+    expect((await db.transactions.toArray()).find(row => row.rawDescription === '商户分期-示例通讯-分3期'))
+      .toMatchObject({ transactionAmountMinor: -90000, settlementAmountMinor: 90000, direction: 'debit', reviewStatus: 'pending',
+        flags: expect.arrayContaining(['amount_direction_unclear']), rawText: expect.stringContaining('CNY -900.00') })
+    expect(result.statement!.status).toBe('needs_review')
   })
 
   it.each(['CNY -3000.00', 'CNY (3000.00)'])('CCB: %s remains negative credit after persistence', async (amount) => {

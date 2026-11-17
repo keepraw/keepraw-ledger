@@ -34,8 +34,8 @@ describe('currency-safe totals and review observability', () => {
     const cny = { ...first, settlementAmountMinor: 100 }
     const jpy = { ...first, id: `${first.id}#2`, transactionCurrency: 'JPY', transactionAmountMinor: 100, settlementCurrency: 'JPY', settlementAmountMinor: 100 }
     const rows = [cny, jpy]
-    expect(summarize(rows)).toMatchObject({ realSpendingMinor: 100, transactionCount: 1, netMinor: 100 })
-    expect(monthlyTrend(rows)).toEqual([{ month: '2024-01', spending: 100, refund: 0 }])
+    expect(summarize(rows)).toMatchObject({ billingDebitMinor: 100, transactionCount: 1, netMinor: 100 })
+    expect(monthlyTrend(rows)).toEqual([{ month: '2024-01', debit: 100, credit: 0 }])
     expect(groupByBank(rows)).toEqual([{ label: first.bank, value: 100 }])
     expect(groupBy(rows, (row) => row.cardLast4)).toEqual([{ label: first.cardLast4, value: 100 }])
     expect(untrustedAmount(rows, [{ ...statement, status: 'needs_review' }])).toBe(100)
@@ -44,7 +44,7 @@ describe('currency-safe totals and review observability', () => {
     render(<DashboardPage />)
     expect(screen.getByTestId('currency-summary-warning')).toHaveTextContent('JPY 1 笔')
     expect(screen.getByTestId('currency-summary-warning')).toHaveTextContent('未进行汇率换算')
-    const spending = screen.getByText('实际消费额').closest('.stat')!
+    const spending = screen.getByText('借记总额').closest('.stat')!
     expect(spending).toHaveTextContent('¥1.00')
     expect(spending).not.toHaveTextContent('¥2.00')
   })
@@ -67,7 +67,7 @@ describe('currency-safe totals and review observability', () => {
       flags: ['suspected_duplicate'], reviewStatus: 'pending' }
     const rows = [first, second]
     const before = structuredClone(rows)
-    expect(summarize(applyFilters(rows, DEFAULT_FILTERS)).realSpendingMinor).toBe(25760)
+    expect(summarize(applyFilters(rows, DEFAULT_FILTERS)).billingDebitMinor).toBe(25760)
     app.visibleTransactions = rows
     app.visibleStatements = [statement]
     render(<DashboardPage />)

@@ -89,11 +89,11 @@ describe('Dashboard monthly trend presentation', () => {
     expect(screen.getByTestId('monthly-trend-range')).toHaveTextContent(
       `覆盖时间：${recentMonths[0]} 至 ${recentMonths[recentMonths.length - 1]}`,
     )
-    const spendingStat = screen.getByText('实际消费额').closest('.stat')!
-    expect(spendingStat).toHaveTextContent(`¥${(expectedSummary.realSpendingMinor / 100).toFixed(2)}`)
+    const spendingStat = screen.getByText('借记总额').closest('.stat')!
+    expect(spendingStat).toHaveTextContent(`¥${(expectedSummary.billingDebitMinor / 100).toFixed(2)}`)
 
-    fireEvent.change(screen.getByRole('combobox', { name: '消费趋势显示范围' }), { target: { value: 'year' } })
-    const yearSelect = screen.getByRole('combobox', { name: '消费趋势年份' })
+    fireEvent.change(screen.getByRole('combobox', { name: '借贷趋势显示范围' }), { target: { value: 'year' } })
+    const yearSelect = screen.getByRole('combobox', { name: '借贷趋势年份' })
     const years = [...new Set(expectedTrend.map((entry) => entry.month.slice(0, 4)))].reverse()
     expect(within(yearSelect).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(years)
     const oldestYear = years[years.length - 1]!
@@ -103,7 +103,7 @@ describe('Dashboard monthly trend presentation', () => {
     expect(screen.getByTestId('monthly-trend-range')).toHaveTextContent(
       `覆盖时间：${oldestYearMonths[0]} 至 ${oldestYearMonths[oldestYearMonths.length - 1]}`,
     )
-    expect(spendingStat).toHaveTextContent(`¥${(expectedSummary.realSpendingMinor / 100).toFixed(2)}`)
+    expect(spendingStat).toHaveTextContent(`¥${(expectedSummary.billingDebitMinor / 100).toFixed(2)}`)
     expect(expectedCards).toHaveLength(1)
   })
 
@@ -118,10 +118,10 @@ describe('Dashboard monthly trend presentation', () => {
     render(<DashboardPage />)
 
     expect(monthKeys()).toEqual(['2025-01', '2025-02'])
-    expect(screen.getByRole('group', { name: '2025-01，消费金额 0.00 元，退款金额 0.00 元' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: '2025-02，消费金额 0.00 元，退款金额 25.00 元' })).toBeInTheDocument()
-    expect(screen.getByText('退款 25.00')).toBeInTheDocument()
-    expect(screen.getByText('退款 0.00')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '2025-01，借记金额 0.00 元，贷记金额 0.00 元' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '2025-02，借记金额 0.00 元，贷记金额 25.00 元' })).toBeInTheDocument()
+    expect(screen.getByText('贷记 25.00')).toBeInTheDocument()
+    expect(screen.getByText('贷记 0.00')).toBeInTheDocument()
   })
 
   it('uses full year-month IDs for repeated month names across years with no duplicate-key warning', () => {
@@ -155,17 +155,17 @@ describe('Dashboard monthly trend presentation', () => {
     ])
 
     render(<DashboardPage />)
-    const spendingStat = screen.getByText('实际消费额').closest('.stat')!
+    const spendingStat = screen.getByText('借记总额').closest('.stat')!
     expect(spendingStat).toHaveTextContent('¥300.00')
-    fireEvent.change(screen.getByRole('combobox', { name: '消费趋势显示范围' }), { target: { value: 'year' } })
-    fireEvent.change(screen.getByRole('combobox', { name: '消费趋势年份' }), { target: { value: '2024' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '借贷趋势显示范围' }), { target: { value: 'year' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '借贷趋势年份' }), { target: { value: '2024' } })
     expect(monthKeys()).toEqual(['2024-01'])
     expect(spendingStat).toHaveTextContent('¥300.00')
 
     fireEvent.change(screen.getByRole('combobox', { name: '总览银行筛选' }), { target: { value: 'ccb' } })
     expect(monthKeys()).toEqual(['2025-02'])
-    expect(screen.getByRole('combobox', { name: '消费趋势年份' })).toHaveValue('2025')
-    expect(within(screen.getByRole('combobox', { name: '消费趋势年份' })).getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('combobox', { name: '借贷趋势年份' })).toHaveValue('2025')
+    expect(within(screen.getByRole('combobox', { name: '借贷趋势年份' })).getAllByRole('option')).toHaveLength(1)
     expect(spendingStat).toHaveTextContent('¥200.00')
 
     fireEvent.change(screen.getByRole('combobox', { name: '总览卡片筛选' }), { target: { value: '2222' } })
@@ -175,7 +175,7 @@ describe('Dashboard monthly trend presentation', () => {
 
     fireEvent.change(screen.getByRole('combobox', { name: '总览月份筛选' }), { target: { value: '' } })
     fireEvent.click(screen.getByRole('checkbox', { name: '包含待复核账单' }))
-    expect(screen.getByRole('combobox', { name: '消费趋势年份' })).toHaveValue('2026')
+    expect(screen.getByRole('combobox', { name: '借贷趋势年份' })).toHaveValue('2026')
     expect(monthKeys()).toContain('2026-04')
     expect(spendingStat).toHaveTextContent('¥600.00')
   })
@@ -197,7 +197,7 @@ describe('Dashboard card distribution presentation', () => {
     render(<DashboardPage />)
 
     expect(screen.getByTestId('card-distribution-count')).toHaveTextContent(`卡片项：${count}`)
-    const distribution = screen.getByRole('heading', { name: '卡片消费分布' }).closest('.card') as HTMLElement
+    const distribution = screen.getByRole('heading', { name: '卡片借记分布' }).closest('.card') as HTMLElement
     const bars = () => Array.from(distribution.querySelectorAll<HTMLElement>('.hbar'))
     expect(bars()).toHaveLength(visibleCount)
     expect(bars().map((bar) => bar.dataset.label)).toEqual(expected.slice(0, 10).map((entry) => entry.label))
@@ -228,7 +228,7 @@ describe('Dashboard card distribution presentation', () => {
 
     render(<DashboardPage />)
 
-    const distribution = screen.getByRole('heading', { name: '卡片消费分布' }).closest('.card')!
+    const distribution = screen.getByRole('heading', { name: '卡片借记分布' }).closest('.card')!
     const labels = Array.from(distribution.querySelectorAll<HTMLElement>('.hbar-label')).map((label) => label.textContent)
     expect(labels).toEqual(['建设银行 ·4242', '中国银行 ·4242'])
     expect(screen.getByTestId('card-distribution-count')).toHaveTextContent('卡片项：2')
@@ -250,13 +250,13 @@ describe('Dashboard card distribution presentation', () => {
 
     expect(monthKeys()).toEqual(originalTrend.map((entry) => entry.month))
     expect(screen.getByTestId('card-distribution-count')).toHaveTextContent(`卡片项：${originalCards.length}`)
-    expect(screen.getByText('实际消费额').closest('.stat')).toHaveTextContent(`¥${(originalSummary.realSpendingMinor / 100).toFixed(2)}`)
+    expect(screen.getByText('借记总额').closest('.stat')).toHaveTextContent(`¥${(originalSummary.billingDebitMinor / 100).toFixed(2)}`)
     fireEvent.change(screen.getByRole('combobox', { name: '总览月份筛选' }), { target: { value: '2024-01' } })
     expect(monthKeys()).toEqual(['2024-01'])
-    expect(screen.getByText('实际消费额').closest('.stat')).toHaveTextContent('¥100.00')
+    expect(screen.getByText('借记总额').closest('.stat')).toHaveTextContent('¥100.00')
 
     // Changing the chart's own view is presentational only; global totals remain filtered as before.
-    fireEvent.change(screen.getByRole('combobox', { name: '消费趋势显示范围' }), { target: { value: 'year' } })
-    expect(screen.getByText('实际消费额').closest('.stat')).toHaveTextContent('¥100.00')
+    fireEvent.change(screen.getByRole('combobox', { name: '借贷趋势显示范围' }), { target: { value: 'year' } })
+    expect(screen.getByText('借记总额').closest('.stat')).toHaveTextContent('¥100.00')
   })
 })

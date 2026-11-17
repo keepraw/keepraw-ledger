@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeDisplayDescription as normalize, transactionDisplayDescription as display, matchesTransactionDescription as matches } from '../src/core/descriptionNormalizer'
-import { extractSourceTypeToken, classifyTransactionType } from '../src/core/classify'
+import { extractSourceTypeToken, legacyTypeForIdentity } from '../src/core/classify'
 import { buildCsv, EXPORT_COLUMNS, transactionToRow } from '../src/export/tabular'
 import { buildLedgerArchiveBuffer, LEDGER_ARCHIVE_HUMAN_SHEET, LEDGER_ARCHIVE_METADATA_SHEET } from '../src/export/ledgerArchive'
 import { ingestSynthetic, EMPTY_SNAPSHOT } from './fixtures/identity'
@@ -42,9 +42,9 @@ describe('local description display rules', () => {
   it.each(['退款', '还款', '分期扣款', '分期原始', '手续费', '利息', '取现', '返现', '调整'])('retains %s semantics and classification', token => {
     const raw = `${token} 支付宝-合成商户`
     const direction = ['退款', '还款', '返现'].includes(token) ? 'credit' : 'debit'
-    const before = classifyTransactionType(extractSourceTypeToken(raw), direction)
+    const before = legacyTypeForIdentity(extractSourceTypeToken(raw), direction)
     expect(normalize(raw)).toBe(raw)
-    expect(classifyTransactionType(extractSourceTypeToken(normalize(raw)), direction)).toEqual(before)
+    expect(legacyTypeForIdentity(extractSourceTypeToken(normalize(raw)), direction)).toEqual(before)
   })
   it('does not truncate long or mixed-language merchants', () => {
     const name = 'ACME-A:消费支付研究 (HONG KONG) 123 '.repeat(5).trim()

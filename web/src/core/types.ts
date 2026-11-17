@@ -17,8 +17,8 @@ export function bankName(id: BankId): string {
 }
 
 /**
- * Business type of a transaction. Kept independent from the signed amount so a
- * refund can never be mistaken for a purchase because of a merchant keyword.
+ * Frozen legacy identity vocabulary. These values include historical guesses
+ * and fallbacks; they are NOT financial facts or review reasons.
  */
 export const TRANSACTION_TYPES = [
   'purchase',
@@ -51,6 +51,35 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
 /** Bank-stated debit/credit direction. Positive amount always means money leaves the card. */
 export type Direction = 'debit' | 'credit'
 
+/** Independent bank evidence. Missing includes contradictory bank direction fields. */
+export interface DirectionEvidence { kind: 'bank' | 'missing'; detail: string }
+/** Explicit human decision; stored direction and signed source amounts remain immutable. */
+export interface DirectionResolution {
+  method: 'accept_bank' | 'user_choice'
+  direction: Direction
+  /** Mandatory for BOC dual-column choices; absent for single-amount rows. */
+  amountSource?: 'debit_column' | 'credit_column'
+}
+export interface BankColumnAmount {
+  direction: Direction
+  rawText: string
+  amountMinor: number
+  currency: string
+}
+/** Two alternatives on ONE uniquely anchored BOC statement row, never two monetary legs. */
+export interface BankColumnAmounts {
+  source: 'boc_pdf'
+  rowBinding: 'single_transaction_anchor'
+  debit: BankColumnAmount
+  credit: BankColumnAmount
+}
+
+/** Independent evidence for excluding an informational, unposted original. */
+export interface PostingExclusion {
+  source: 'bocom_plan' | 'bank_original_marker' | 'legacy_installment_exclusion'
+  detail: string
+}
+
 export const CATEGORIES = [
   '未分类',
   '餐饮',
@@ -70,7 +99,6 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number]
 
 export const REVIEW_FLAGS = [
-  'transaction_type_unclear',
   'statement_mismatch',
   'missing_summary',
   'amount_direction_unclear',
@@ -86,7 +114,6 @@ export const REVIEW_FLAGS = [
 export type ReviewFlag = (typeof REVIEW_FLAGS)[number]
 
 export const REVIEW_FLAG_LABELS: Record<ReviewFlag, string> = {
-  transaction_type_unclear: '交易类型待确认',
   statement_mismatch: '账单对账存在差额',
   missing_summary: '缺少必要汇总信息',
   amount_direction_unclear: '借贷方向不确定',
@@ -114,12 +141,22 @@ export interface Transaction {
   /** Raw description straight from the statement, kept for traceability. */
   rawDescription: string
   transactionCurrency: string
-  /** Signed minor units, positive = expense, negative = credit/refund/repayment. */
+  /** Normally positive = debit, negative = credit. Direction-review rows retain
+   * contradictory source signs as evidence instead of silently correcting them.
+   * BOC dual-column rows keep the old identity projection here; financial
+   * amounts MUST come from the explicitly selected bankColumnAmounts entry. */
   transactionAmountMinor: number
   settlementCurrency: string
   settlementAmountMinor: number
+  /** Legacy identity metadata only. Never use for finance, direction or review. */
   type: TransactionType
   direction: Direction
+  /** New native exports explicitly carry full review flags; do not apply the old phantom-confidence repair. */
+  reviewFlagsSource?: 'native_export'
+  directionEvidence?: DirectionEvidence
+  directionResolution?: DirectionResolution
+  bankColumnAmounts?: BankColumnAmounts
+  postingExclusion?: PostingExclusion | null
   category: Category
   /** Parser confidence (0–1). Native XLSX history uses 0 for unavailable metadata;
    * review tasks depend on flags/status, never this placeholder alone. */

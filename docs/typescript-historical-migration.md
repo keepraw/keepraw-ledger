@@ -1,5 +1,9 @@
 # TypeScript historical migration
 
+Direction-first finance and the current 23-column native export are documented in
+[借贷方向优先](direction-first-ledger.md). The frozen 20/21-column schemas below
+remain accepted; their type column is identity metadata, not a financial fact.
+
 The browser can migrate three historical XLSX schemas and its native transaction export without
 running Python, generating SQLite, or calling a parsing service. The retired
 Python implementation has been removed; TypeScript is the only production path:

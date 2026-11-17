@@ -46,12 +46,13 @@ test.describe('Demo Mode', () => {
 })
 
 test.describe('Dashboard', () => {
-  test('shows spending, refunds and reconciliation status', async ({ page }) => {
+  test('shows debit, credit, net and reconciliation status', async ({ page }) => {
     await goto(page, 'dashboard')
     const stats = page.locator('.stat')
-    await expect(stats.nth(0)).toContainText('实际消费额')
-    await expect(stats.nth(1)).toContainText('退款额')
-    await expect(stats.nth(2)).toContainText('返现额')
+    await expect(stats.nth(0)).toContainText('借记总额')
+    await expect(stats.nth(1)).toContainText('贷记总额')
+    await expect(stats.nth(2)).toContainText('账单入账净额')
+    await expect(stats.nth(3)).toContainText('交易笔数')
     await expect(page.locator('.bar-col').first()).toBeVisible()
     await expect(page.locator('.hbar').first()).toBeVisible()
     // The demo dataset deliberately contains one statement that does not balance.

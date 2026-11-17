@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../src/db/db'
 import { readSnapshot } from '../src/db/repository'
 import { minorToDecimalString } from '../src/core/money'
-import { TRANSACTION_TYPE_LABELS, bankName, type Statement, type Transaction } from '../src/core/types'
+import { bankName, type Statement, type Transaction } from '../src/core/types'
 import { emptySummary } from '../src/parsers/types'
 import {
   LEDGER_ARCHIVE_HUMAN_SHEET,
@@ -241,7 +241,6 @@ describe('ledger XLSX archive', () => {
       '交易日',
       '入账日',
       '说明',
-      '交易类型',
       '方向',
       '交易币种',
       '交易金额',
@@ -272,7 +271,6 @@ describe('ledger XLSX archive', () => {
     const txnDateIndex = headers.indexOf('交易日')
     const postingIndex = headers.indexOf('入账日')
     const descIndex = headers.indexOf('说明')
-    const typeIndex = headers.indexOf('交易类型')
     const dirIndex = headers.indexOf('方向')
     const txnCcyIndex = headers.indexOf('交易币种')
     const txnAmtIndex = headers.indexOf('交易金额')
@@ -302,7 +300,6 @@ describe('ledger XLSX archive', () => {
       expect(String(match![cardIndex])).toBe(tx.cardLast4)
       expect(String(match![txnDateIndex])).toBe(tx.transactionDate ?? '')
       expect(String(match![postingIndex])).toBe(tx.postingDate ?? '')
-      expect(String(match![typeIndex])).toBe(TRANSACTION_TYPE_LABELS[tx.type])
       expect(String(match![dirIndex])).toBe(tx.direction === 'credit' ? '贷' : '借')
       // Amounts are stored as text so Excel never loses precision to floats.
       expect(typeof match![txnAmtIndex]).toBe('string')
@@ -352,6 +349,7 @@ describe('ledger XLSX archive', () => {
     for (const tx of transactions) {
       const row = byId.get(tx.id)!
       expect(String(row[headers.indexOf('fingerprint')])).toBe(tx.fingerprint)
+      expect(String(row[headers.indexOf('legacy_type_identity_only')])).toBe(tx.type)
       expect(Number(row[headers.indexOf('duplicate_occurrence')])).toBe(tx.occurrence)
       expect(String(row[headers.indexOf('statement_id')])).toBe(tx.statementId)
     }

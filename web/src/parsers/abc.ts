@@ -1,9 +1,10 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, isIsoDate, parseDateInput, type IsoDate } from '../core/dates'
-import { classifyTransactionType, extractSourceTypeToken, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'abc_eml'
 const PARSER_VERSION = '1.0.0'
@@ -371,12 +372,13 @@ function parseRow(
     direction = settleIsExpense ? 'debit' : 'credit'
   }
 
-  const transactionAmountMinor = signForDirection(txnSplit.minor, direction)
-  const settlementAmountMinor = signForDirection(settleSplit.minor, direction)
+  // Original column prints magnitudes (a negative debit is contradictory).
+  // Settlement column explicitly uses 支出为-: inspect both RAW signs first.
+  const amounts = resolveBankAmounts(txnSplit.negative ? -txnSplit.minor : txnSplit.minor,
+    settleSplit.negative ? -settleSplit.minor : settleSplit.minor, direction, 'abc')
 
   const bankToken = extractBankToken(rawDescription)
-  const classification = classifyTransactionType(bankToken || section || '', direction, settlementAmountMinor)
-  let type = classification.type
+  let type = legacyTypeForIdentity(bankToken || section || '', direction)
   if (section && /还款/.test(section) && direction === 'credit' && type === 'payment') {
     // keep payment
   }
@@ -394,13 +396,16 @@ function parseRow(
     rawDescription,
     description,
     transactionCurrency: txnSplit.currency,
-    transactionAmountMinor,
+    ...amounts,
     settlementCurrency: settleSplit.currency,
-    settlementAmountMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    directionEvidence: section && directionFromSection(section)
+      ? { kind: 'bank', detail: `农业银行账单分区：${section}；入账金额约定：支出为-` }
+      : settleSplit.minor !== 0 ? { kind: 'bank', detail: '农业银行入账金额符号约定：支出为-，贷记为正' }
+        : { kind: 'missing', detail: '没有有效账单分区，零金额无法提供方向' },
     bankToken: bankToken || section || '',
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.9 : 0.6,
     sourcePage: null,
     sourceRow,

@@ -1,5 +1,5 @@
 import { addDays, addMonths, monthEnd } from '../core/dates'
-import { inferTransactionType, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity, signForDirection } from '../core/classify'
 import { ingestParsedStatement, type IngestResult } from '../core/ingest'
 import { emptySummary, type ParsedStatement, type ParsedTransaction } from '../parsers/types'
 import type { Direction, ImportRecord, Statement, StatementSummary, Transaction } from '../core/types'
@@ -115,11 +115,10 @@ function buildStatement(plan: DemoPlan, random: () => number): ParsedStatement {
     )
   }
 
-  const purchases = transactions.filter((tx) => tx.direction === 'debit' && tx.type === 'purchase')
-  const charges = transactions.filter((tx) => tx.direction === 'debit' && (tx.type === 'fee' || tx.type === 'interest'))
-  const credits = transactions.filter((tx) => tx.direction === 'credit')
-  const newDebitMinor = sumAbs(purchases)
-  const chargeMinor = sumAbs(charges)
+  // Synthetic bank summary: the explicitly constructed fee is known above.
+  const chargeMinor = plan.bank === 'bocom' ? 193 : 0
+  const newDebitMinor = sumAbs(transactions.filter(tx => tx.direction === 'debit')) - chargeMinor
+  const credits = transactions.filter(tx => tx.direction === 'credit')
   const newCreditMinor = sumAbs(credits)
   const currentBalanceMinor =
     plan.previousBalanceMinor + newDebitMinor + chargeMinor - newCreditMinor + (plan.forceDiscrepancyMinor ?? 0)
@@ -176,7 +175,7 @@ function makeTransaction(input: {
   forceType?: string
 }): ParsedTransaction {
   const token = input.description.split(' ')[0] ?? ''
-  const type = (input.forceType as ParsedTransaction['type']) ?? inferTransactionType(token, input.description, input.direction)
+  const type = (input.forceType as ParsedTransaction['type']) ?? legacyTypeForIdentity(token, input.direction)
   const signed = signForDirection(input.amountMinor, input.direction)
   return {
     cardLast4: input.cardLast4,

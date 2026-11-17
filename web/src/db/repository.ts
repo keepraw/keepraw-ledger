@@ -1,3 +1,4 @@
+import { isPostingExcluded, bankColumnSelectionKey, applyReviewPatch, effectiveDirection, hasResolvedDirection } from '../core/direction'
 import { normalizeRestoredTransaction } from './restoreTransaction'
 import { withoutLegacyMerchant } from './transactionRecord'
 import type { ExistingSnapshot, IngestResult } from '../core/ingest'
@@ -146,11 +147,11 @@ export async function patchTransactionWithStatements(patch: Partial<Transaction>
   return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
     const current = await db.transactions.get(ownedPatch.id)
     if (!current) return undefined
-    const next = withoutLegacyMerchant({ ...current, ...ownedPatch })
+    const next = withoutLegacyMerchant(applyReviewPatch(current, ownedPatch))
     await db.transactions.put(next)
     if (next.isDemo) await db.settings.delete(DEMO_PURGE_KEY)
     const affectsReconciliation = (['statementId', 'transactionCurrency', 'transactionAmountMinor',
-      'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'reviewStatus', 'isDemo'] as const)
+      'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'directionEvidence', 'directionResolution', 'bankColumnAmounts', 'flags', 'reviewStatus', 'isDemo'] as const)
       .some(key => current[key] !== next[key])
     const statements = affectsReconciliation ? await rebuildStatementStates([current.statementId, next.statementId]) : []
     await bumpLedgerRevision()
@@ -186,8 +187,7 @@ export async function reviewTransactions(ids: readonly string[], decision: 'conf
       (row.reviewStatus !== 'pending' && row.flags.length === 0))) {
       throw new Error('所选交易已不存在或不再待复核，请刷新后重新选择；本次操作未写入。')
     }
-    const transactions = rows.map(row => ({ ...row!, reviewStatus: decision,
-      flags: decision === 'confirmed' ? [] : row!.flags }))
+    const transactions = rows.map(row => applyReviewPatch(row!, { reviewStatus: decision, flags: decision === 'confirmed' ? [] : row!.flags }))
     for (let offset = 0; offset < transactions.length; offset += 2000) {
       await db.transactions.bulkPut(transactions.slice(offset, offset + 2000))
     }
@@ -318,6 +318,15 @@ async function applyBackupPayload(payload: BackupPayload, storedNotes: Array<{ t
         'transactionCurrency', 'transactionAmountMinor', 'settlementCurrency', 'settlementAmountMinor', 'type', 'direction', 'fingerprint', 'occurrence']
         .some((key) => current[key as keyof Transaction] !== row[key as keyof Transaction])) {
         throw new Error(`交易标识冲突，拒绝覆盖：${row.id}`)
+      }
+      if (current && (hasResolvedDirection(current) !== hasResolvedDirection(row) || effectiveDirection(current) !== effectiveDirection(row))) {
+        throw new Error(`人工方向决定冲突，拒绝覆盖：${row.id}`)
+      }
+      if (current && bankColumnSelectionKey(current) !== bankColumnSelectionKey(row)) {
+        throw new Error(`银行金额来源或人工选择冲突，拒绝覆盖：${row.id}`)
+      }
+      if (current && (Boolean(current.postingExclusion) !== Boolean(row.postingExclusion) || isPostingExcluded(current) !== isPostingExcluded(row))) {
+        throw new Error(`入账排除依据冲突，拒绝覆盖：${row.id}`)
       }
     }
     for (const [index, row] of payload.statements.entries()) {

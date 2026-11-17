@@ -1,9 +1,10 @@
+import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { parseDateInput } from '../core/dates'
-import { classifyTransactionType, signForDirection } from '../core/classify'
+import { legacyTypeForIdentity } from '../core/classify'
 import { parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
-import { assertCreditSign, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
+import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'icbc_eml'
 const PARSER_VERSION = '1.0.0'
@@ -13,7 +14,7 @@ const PARSER_VERSION = '1.0.0'
  *
  * Direction comes from the 记账金额 suffix `(存入 = credit, 支出 = debit)` and
  * never from the merchant text. The 交易类型 column is the bank's structured
- * type token used for `inferTransactionType`.
+ * token retained only for legacy fingerprint compatibility.
  */
 
 const FOOTER_MARKERS = /温馨提示|工银i豆|服务热线|网站www|余额.*豆|联名版信息/
@@ -278,18 +279,6 @@ export function parseSplitAmount(cell: string): SplitAmount | null {
   return { currency, minor: parsed.minor, direction }
 }
 
-const CREDIT_TYPE_TOKENS = /^(退款|退货|刷卡金|返现|还款|存入|贷方|调整|冲正)/
-const DEBIT_TYPE_TOKENS = /^(消费|取现|预借现金|转账扣款|手续费|年费|服务费|利息|透支利息|违约金)/
-
-export function directionFromTypeToken(token: string): Direction | null {
-  const text = token.trim()
-  if (!text) return null
-  if (CREDIT_TYPE_TOKENS.test(text)) return 'credit'
-  if (DEBIT_TYPE_TOKENS.test(text)) return 'debit'
-  if (/^转账/.test(text)) return null
-  return null
-}
-
 /**
  * Description cleanup: collapse whitespace, strip a single trailing slash
  * (`财付通 /` → `财付通`) while keeping internal slashes. `rawDescription`
@@ -338,20 +327,16 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
   const settleSplit = requireTransactionAmount(parseSplitAmount(cells[6] ?? ''), rowIndex)
   const primary = settleSplit
 
-  let direction: Direction | null = primary.direction ?? (primary.minor < 0 ? 'credit' : null) ?? directionFromTypeToken(bankToken)
-  if (!direction) {
-    direction = 'debit'
-  }
+  const direction: Direction = primary.direction ?? (primary.minor < 0 ? 'credit' : 'debit')
 
-  assertCreditSign(txnSplit.minor < 0 || settleSplit.minor < 0, direction, rowIndex)
+  const directionConflict = (primary.direction === null && primary.minor >= 0) ||
+    (txnSplit.direction !== null && txnSplit.direction !== direction)
+  const amounts = resolveBankAmounts(txnSplit.minor, settleSplit.minor, direction, 'magnitude', directionConflict)
   const txnCurrency = txnSplit.currency
-  const txnMinor = signForDirection(txnSplit.minor, direction)
   const settleCurrency = settleSplit.currency
-  const settleMinor = signForDirection(primary.minor, direction)
 
   const cleaned = cleanDescription(rawDescription)
-  const classification = classifyTransactionType(bankToken, direction, settleMinor)
-  const type = classification.type
+  const type = legacyTypeForIdentity(bankToken, direction)
   const description = cleaned || '未识别交易'
 
   return {
@@ -361,13 +346,15 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     rawDescription,
     description,
     transactionCurrency: txnCurrency,
-    transactionAmountMinor: txnMinor,
+    ...amounts,
     settlementCurrency: settleCurrency,
-    settlementAmountMinor: settleMinor,
     type,
-    typeUncertain: classification.requiresReview,
     direction,
+    directionEvidence: primary.direction === null && primary.minor >= 0 || (txnSplit.direction !== null && txnSplit.direction !== direction)
+      ? { kind: 'missing', detail: '工商银行缺少有效存入/支出标记，或两组方向标记矛盾；当前方向仅为占位' }
+      : { kind: 'bank', detail: primary.direction ? '工商银行金额列存入/支出标记' : '工商银行明确负数贷记符号' },
     bankToken,
+    postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,
     sourcePage: null,
     sourceRow: rowIndex,

@@ -1,13 +1,14 @@
+import { hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription, matchesTransactionDescription } from '../../core/descriptionNormalizer'
 import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { applyFilters, DEFAULT_FILTERS, type Filters } from '../../core/analytics'
 import { formatMinor } from '../../core/money'
-import { CATEGORIES, TRANSACTION_TYPE_LABELS, bankName, type BankId, type Category, type Transaction } from '../../core/types'
+import { CATEGORIES, bankName, type BankId, type Category, type Transaction } from '../../core/types'
 import { downloadCsv, downloadXlsx } from '../../export/tabular'
-import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, TypeBadge } from '../components/ui'
+import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, DirectionBadge } from '../components/ui'
 
-type SortKey = 'transactionDate' | 'postingDate' | 'description' | 'settlementAmountMinor' | 'type'
+type SortKey = 'transactionDate' | 'postingDate' | 'description' | 'settlementAmountMinor' | 'direction'
 type SortDir = 'asc' | 'desc'
 
 const PAGE_SIZE = 50
@@ -15,9 +16,9 @@ const collator = new Intl.Collator()
 const compareDates = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0
 
 /** Sort repeated text groups once, then apply the historical date tie within each. */
-function sortRepeatedText(transactions: Transaction[], key: 'description' | 'type', direction: number): Transaction[] | undefined {
+function sortRepeatedText(transactions: Transaction[], key: 'description' | 'direction', direction: number): Transaction[] | undefined {
   if (transactions.length < 256) return undefined
-  const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : tx[key]
+  const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : effectiveDirection(tx)
   const values = new Set(transactions.map(valueOf))
   // Mostly unique text cannot amortize a second sort. Keep its direct comparator.
   if (values.size > transactions.length / 4) return undefined
@@ -40,22 +41,23 @@ function sortRepeatedText(transactions: Transaction[], key: 'description' | 'typ
 export function sortTransactions(transactions: Transaction[], sortKey: SortKey, sortDir: SortDir): Transaction[] {
   const direction = sortDir === 'asc' ? 1 : -1
   const dateKey = sortKey === 'transactionDate' || sortKey === 'postingDate'
-  if (sortKey === 'description' || sortKey === 'type') {
+  if (sortKey === 'description' || sortKey === 'direction') {
     const repeated = sortRepeatedText(transactions, sortKey, direction)
     if (repeated) return repeated
   }
   return [...transactions].sort((a, b) => {
-    const left = sortKey === 'description' ? transactionDisplayDescription(a) : a[sortKey]
-    const right = sortKey === 'description' ? transactionDisplayDescription(b) : b[sortKey]
+    const left = sortKey === 'description' ? transactionDisplayDescription(a) : sortKey === 'direction' ? effectiveDirection(a) : a[sortKey]
+    const right = sortKey === 'description' ? transactionDisplayDescription(b) : sortKey === 'direction' ? effectiveDirection(b) : b[sortKey]
     if (left === null || right === null) {
       if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
       return left === null ? 1 : -1
     }
     // Currency groups stay in code order; only amounts within a group change direction.
     if (sortKey === 'settlementAmountMinor') {
-      const currencyOrder = compareDates(a.settlementCurrency, b.settlementCurrency)
+      const currencyOrder = compareDates(effectiveCurrencyForDirection(a), effectiveCurrencyForDirection(b))
       if (currencyOrder) return currencyOrder
-      const amountOrder = a.settlementAmountMinor < b.settlementAmountMinor ? -1 : a.settlementAmountMinor > b.settlementAmountMinor ? 1 : 0
+      const amountA = effectiveAmountForDirection(a) ?? a.settlementAmountMinor, amountB = effectiveAmountForDirection(b) ?? b.settlementAmountMinor
+      const amountOrder = amountA < amountB ? -1 : amountA > amountB ? 1 : 0
       return amountOrder ? amountOrder * direction : compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
     }
     if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
@@ -67,7 +69,7 @@ export function TransactionsPage() {
   const { visibleTransactions, updateTransaction, state } = useApp()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('')
+  const [directionFilter, setDirectionFilter] = useState<string>('')
   const [sortKey, setSortKey] = useState<SortKey>('transactionDate')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(0)
@@ -77,7 +79,7 @@ export function TransactionsPage() {
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return applyFilters(visibleTransactions, filters).filter((tx) => {
-      if (typeFilter && tx.type !== typeFilter) return false
+      if (directionFilter && ((hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank') || effectiveDirection(tx) !== directionFilter)) return false
       if (!needle) return true
       return (
         matchesTransactionDescription(tx, needle) ||
@@ -85,7 +87,7 @@ export function TransactionsPage() {
         bankName(tx.bank).includes(needle)
       )
     })
-  }, [visibleTransactions, filters, search, typeFilter])
+  }, [visibleTransactions, filters, search, directionFilter])
   const rows = useMemo(() => sortTransactions(filtered, sortKey, sortDir), [filtered, sortKey, sortDir])
 
   const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -136,18 +138,16 @@ export function TransactionsPage() {
           />
           <select
             className="select"
-            value={typeFilter}
+            aria-label="借贷方向筛选"
+            value={directionFilter}
             onChange={(event) => {
-              setTypeFilter(event.target.value)
+              setDirectionFilter(event.target.value)
               setPage(0)
             }}
           >
-            <option value="">全部类型</option>
-            {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
+            <option value="">全部方向</option>
+            <option value="debit">借记</option>
+            <option value="credit">贷记</option>
           </select>
           <select
             className="select"
@@ -210,8 +210,8 @@ export function TransactionsPage() {
                   <th className="sortable num" onClick={() => toggleSort('settlementAmountMinor')}>
                     金额{arrow('settlementAmountMinor')}
                   </th>
-                  <th className="sortable" onClick={() => toggleSort('type')}>
-                    类型{arrow('type')}
+                  <th className="sortable" onClick={() => toggleSort('direction')}>
+                    方向{arrow('direction')}
                   </th>
                   <th>分类</th>
                   <th>复核</th>
@@ -236,10 +236,12 @@ export function TransactionsPage() {
                     </td>
                     <td className="nowrap muted">{tx.settlementCurrency}</td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                      {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, effectiveCurrencyForDirection(tx))}
+                      {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small>
+                        : effectiveAmountForDirection(tx) === null ? <small>方向待解决，未计入统计</small> : null}
                     </td>
                     <td className="nowrap">
-                      <TypeBadge type={tx.type} />
+                      {hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank' ? '待选择' : <DirectionBadge direction={effectiveDirection(tx)} />}
                     </td>
                     <td>
                       <select
@@ -279,7 +281,7 @@ export function TransactionsPage() {
       </div>
 
       <p className="subtle">
-        金额排序：按结算币种代码固定分组，组内按金额数值升降序，不进行汇率换算。金额符号约定：支出为正，存入 / 还款 / 退款为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
+        金额排序：按结算币种代码固定分组，组内按金额数值升降序，不进行汇率换算。金额符号约定：借记为正，贷记为负。借贷方向来自银行账单的列或分区，不依赖商户名称关键字。
       </p>
     </>
   )

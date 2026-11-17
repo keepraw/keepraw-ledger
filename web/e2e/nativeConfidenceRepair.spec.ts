@@ -21,7 +21,7 @@ test('18,286 native XLSX rows: UI import, historical v4 repair, refresh and appl
   await page.getByTestId('demo-toggle').uncheck()
   const rows = Array.from({ length: 18_286 }, (_, i) => transactionToRow(nativeTransaction(i + 1, {
     reviewStatus: i < 18_000 ? 'ok' : i < 18_200 ? 'confirmed' : i < 18_250 ? 'pending' : 'rejected',
-  })))
+  })).slice(0, 21))
   await page.goto('/#/import')
   await page.getByTestId('legacy-file-input').setInputFiles({ name: 'synthetic-18286.xlsx',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

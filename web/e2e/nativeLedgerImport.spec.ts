@@ -60,7 +60,7 @@ test('same native file incrementally recovers previously excluded rows and a sec
   expect(repeat.imports[0]).toMatchObject({ status: 'duplicate', transactionCount: 0 })
 })
 
-test('native 20-column preview, UI export, fresh-browser 21-column restoration and conflict protection', async ({ page, browser }, testInfo) => {
+test('native 20-column preview, UI export, fresh-browser 27-column restoration and conflict protection', async ({ page, browser }, testInfo) => {
   const origin = new URL(String(testInfo.project.use.baseURL)).origin
   await page.goto('/#/settings')
   await page.getByTestId('demo-toggle').uncheck()
@@ -104,7 +104,7 @@ test('native 20-column preview, UI export, fresh-browser 21-column restoration a
     await restoredPage.getByTestId('legacy-confirm').click()
     await expect(restoredPage.getByTestId('legacy-preview')).toHaveCount(0)
     await restoredPage.reload()
-    expect((await snapshot(restoredPage)).transactions).toEqual(initial.transactions)
+    expect((await snapshot(restoredPage)).transactions).toEqual(initial.transactions.map(tx => ({ ...tx, reviewFlagsSource: 'native_export' })))
     await restoredPage.getByTestId('legacy-file-input').setInputFiles(roundtrip)
     await expect(restoredPage.getByText('该文件此前已导入，确认后不会产生重复交易。')).toBeVisible()
     await restoredPage.getByTestId('legacy-confirm').click()

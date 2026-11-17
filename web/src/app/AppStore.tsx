@@ -1,3 +1,4 @@
+import { applyReviewPatch } from '../core/direction'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../db/db'
 import {
@@ -411,7 +412,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           (row.reviewStatus !== 'pending' && row.flags.length === 0))) throw new Error('所选演示交易不再待复核，请重新选择。')
         const selected = new Set(ownedIds)
         const transactions = current.transactions.map(row => selected.has(row.id)
-          ? { ...row, reviewStatus: decision, flags: decision === 'confirmed' ? [] : row.flags } : row)
+          ? applyReviewPatch(row, { reviewStatus: decision, flags: decision === 'confirmed' ? [] : row.flags }) : row)
         const affected = new Set(rows.map(row => row!.statementId))
         const grouped = new Map<string, Transaction[]>()
         for (const row of transactions) {
