@@ -526,6 +526,8 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     settlementCurrency: config.currency,
     type,
     direction: selectedAmount.direction,
+    directionEvidence: directionConflict ? { kind: 'missing', detail: '中国银行同一行同时出现借记和贷记金额列，无法确定唯一方向' }
+      : { kind: 'bank', detail: '中国银行借记/贷记金额列位置' },
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, row.text, selectedAmount.direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.95 : 0.6,

@@ -83,7 +83,7 @@ describe('bank sign conflicts preserve rows and raw evidence instead of aborting
     expect(summarize(recovered)).toEqual(summarize(snapshot.transactions))
     expect(recovered.find(tx => tx.id === stored.id)).toMatchObject({ id: stored.id, fingerprint: stored.fingerprint,
       occurrence: stored.occurrence, direction: stored.direction, transactionAmountMinor: stored.transactionAmountMinor,
-      settlementAmountMinor: stored.settlementAmountMinor, rawText: stored.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
+      settlementAmountMinor: stored.settlementAmountMinor, rawText: stored.rawText, reviewStatus: 'pending', flags: stored.flags })
     expect(planLegacyImport(await previewLegacyWorkbook(bytes, meta, snapshot), snapshot).inserted).toEqual([])
   })
 
@@ -125,7 +125,7 @@ describe('bank sign conflicts preserve rows and raw evidence instead of aborting
       expect(summarize(recovered)).toEqual(summarize(rows))
       expect(recovered.find(tx => tx.id === conflict.id)).toMatchObject({ id: conflict.id, fingerprint: conflict.fingerprint,
         direction: 'debit', transactionAmountMinor: expectedMinor, settlementAmountMinor: expectedMinor,
-        rawText: conflict.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
+        rawText: conflict.rawText, reviewStatus: 'pending', flags: conflict.flags })
     })
   }
   it('BOC single negative debit is saved unchanged for direction review', async () => {
@@ -270,7 +270,7 @@ it('totals, trends and both reconciliation engines ignore every legacy type valu
   expect(reconcileStatementTransactions(statement, offset)).toMatchObject({ status: 'mismatch', differenceMinor: 0 })
   const conflict = { ...debit, direction: 'credit' as const }
   expect(reconcileStatement({ summary, transactions: [conflict, credit] }).status).toBe('mismatch')
-  expect(reconcileStatementTransactions(statement, [conflict, credit])).toMatchObject({ status: 'mismatch', differenceMinor: 0 })
+  expect(reconcileStatementTransactions(statement, [conflict, credit])).toMatchObject({ status: 'mismatch', transactionTotalMinor: -100, differenceMinor: 1150 })
   expect(summarize([conflict])).toMatchObject({ transactionCount: 0, netMinor: 0 })
 })
 
@@ -281,7 +281,7 @@ it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('native XLSX keeps 
   const preview = await previewLegacyWorkbook(bytes, { fileName: 'synthetic.xlsx', fileHash: 'conflict', fileSize: bytes.byteLength }, EMPTY_SNAPSHOT)
   expect(preview.anomalies).toEqual([])
   expect(planLegacyImport(preview, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: row.id, fingerprint: row.fingerprint,
-    category: '旅行', flags: ['amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
+    category: '旅行', flags: ['uncategorized', 'amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
 })
 
 it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('native XLSX preserves a settlement/direction conflict with exported status %s', async status => {
@@ -293,7 +293,7 @@ it.each(['ok', 'pending', 'confirmed', 'rejected'] as const)('native XLSX preser
   expect(preview.anomalies).toEqual([])
   expect(planLegacyImport(preview, EMPTY_SNAPSHOT).inserted[0]).toMatchObject({ id: row.id, fingerprint: row.fingerprint,
     direction: 'debit', transactionAmountMinor: -100, settlementAmountMinor: -100,
-    flags: ['amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
+    flags: ['uncategorized', 'amount_direction_unclear'], reviewStatus: status === 'ok' ? 'pending' : status })
   // A conflicting direction under an ALREADY STORED ID still blocks recovery.
   const existing = { ...EMPTY_SNAPSHOT, transactions: [{ ...row, direction: 'credit' as const }] }
   const conflicting = await previewLegacyWorkbook(bytes, meta, existing)

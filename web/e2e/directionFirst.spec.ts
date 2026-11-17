@@ -103,7 +103,7 @@ for (const entry of conflictUploads) {
       expect(recovered.find((row: { id: string }) => row.id === original.id)).toMatchObject({
         id: original.id, fingerprint: original.fingerprint, occurrence: original.occurrence, direction: original.direction,
         transactionAmountMinor: original.transactionAmountMinor, settlementAmountMinor: original.settlementAmountMinor,
-        rawText: original.rawText, reviewStatus: 'pending', flags: ['amount_direction_unclear'] })
+        rawText: original.rawText, reviewStatus: 'pending', flags: original.flags })
       await restored.goto('/#/review')
       await restored.getByRole('button', { name: /交易复核/ }).click()
       await expect(restored.getByTestId('review-table')).toContainText('借贷方向不确定')

@@ -57,6 +57,8 @@ export interface NormalizedLegacyRow {
   /** Frozen legacy/native fingerprint metadata; never determines finance. */
   type: TransactionType
   direction: Direction
+  directionEvidence?: import('../core/types').DirectionEvidence
+  directionResolution?: import('../core/types').DirectionResolution
   postingExclusion?: import('../core/types').PostingExclusion | null
   category: Category
   confidence: number
@@ -67,7 +69,7 @@ export interface NormalizedLegacyRow {
   cycleStart: IsoDate | null
   cycleEnd: IsoDate | null
   /** Validated native identity and the metadata actually present in the XLSX. */
-  native?: Pick<import('../core/types').Transaction, 'id' | 'fingerprint' | 'occurrence' | 'reviewStatus' | 'sourceFileName' | 'sourceFileHash' | 'sourcePage'>
+  native?: Pick<import('../core/types').Transaction, 'id' | 'fingerprint' | 'occurrence' | 'reviewStatus' | 'sourceFileName' | 'sourceFileHash' | 'sourcePage' | 'reviewFlagsSource'>
 }
 
 export interface LegacyPreviewStats {

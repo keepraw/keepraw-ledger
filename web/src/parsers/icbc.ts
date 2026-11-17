@@ -350,6 +350,9 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     settlementCurrency: settleCurrency,
     type,
     direction,
+    directionEvidence: primary.direction === null && primary.minor >= 0 || (txnSplit.direction !== null && txnSplit.direction !== direction)
+      ? { kind: 'missing', detail: '工商银行缺少有效存入/支出标记，或两组方向标记矛盾；当前方向仅为占位' }
+      : { kind: 'bank', detail: primary.direction ? '工商银行金额列存入/支出标记' : '工商银行明确负数贷记符号' },
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,

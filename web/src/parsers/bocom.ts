@@ -451,6 +451,7 @@ function parseRow(
     settlementCurrency: settlementParsed.currency,
     type,
     direction,
+    directionEvidence: { kind: 'bank', detail: '交通银行借记/贷记明细分区' },
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: 0.93,

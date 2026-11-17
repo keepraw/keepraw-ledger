@@ -368,6 +368,7 @@ function parseRow(cells: string[], rowIndex: number, fallbackCardLast4: string):
     settlementCurrency: primary.currency,
     type,
     direction,
+    directionEvidence: { kind: 'bank', detail: '中信银行入账金额符号：负为贷记' },
     bankToken,
     postingExclusion: postingExclusionFromBankToken(bankToken, cells.join(' | '), direction),
     confidence: cleaned && cleaned !== '未识别交易' ? 0.93 : 0.6,

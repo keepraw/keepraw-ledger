@@ -77,7 +77,7 @@ export function ingestParsedStatement(
     const fingerprint = fingerprints[index]!
     const occurrence = occurrences[index]!.occurrence
     const flags: ReviewFlag[] = []
-    if (tx.amountDirectionUnclear || hasAmountDirectionConflict(tx)) flags.push('amount_direction_unclear')
+    if (tx.directionEvidence?.kind === 'missing' || tx.amountDirectionUnclear || hasAmountDirectionConflict(tx)) flags.push('amount_direction_unclear')
     if (tx.confidence < 0.8) flags.push('low_confidence')
     if (!tx.transactionDate || !tx.postingDate) flags.push('date_missing')
     if (!rowCardLast4 || rowCardLast4 === '????') flags.push('card_missing')
@@ -99,6 +99,7 @@ export function ingestParsedStatement(
       settlementAmountMinor: tx.settlementAmountMinor,
       type: tx.type,
       direction: tx.direction,
+      ...(tx.directionEvidence ? { directionEvidence: tx.directionEvidence } : {}),
       postingExclusion: tx.postingExclusion ?? null,
       category: inferCategory(tx.description) as Transaction['category'],
       confidence: tx.confidence,

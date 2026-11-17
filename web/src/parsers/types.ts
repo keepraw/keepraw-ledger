@@ -61,6 +61,7 @@ export interface ParsedTransaction {
   type: TransactionType
   postingExclusion?: import('../core/types').PostingExclusion | null
   direction: Direction
+  directionEvidence?: import('../core/types').DirectionEvidence
   /** Conflict in raw bank evidence before sign normalization. */
   amountDirectionUnclear?: boolean
   /** The bank's own structured type token when the statement provides one. */
@@ -127,12 +128,14 @@ export function resolveBankAmounts(
   transactionMinor: number,
   settlementMinor: number,
   direction: Direction,
-  convention: 'signed' | 'magnitude' = 'signed',
+  convention: 'signed' | 'magnitude' | 'abc' = 'signed',
   sourceDirectionUnclear = false,
 ): Pick<ParsedTransaction, 'transactionAmountMinor' | 'settlementAmountMinor' | 'amountDirectionUnclear'> {
-  const signsDisagree = transactionMinor !== 0 && settlementMinor !== 0 &&
+  const signsDisagree = convention !== 'abc' && transactionMinor !== 0 && settlementMinor !== 0 &&
     (transactionMinor < 0) !== (settlementMinor < 0)
-  const directionConflict = convention === 'signed'
+  const directionConflict = convention === 'abc'
+    ? (direction === 'debit' && transactionMinor < 0) || (settlementMinor !== 0 && (settlementMinor < 0) !== (direction === 'debit'))
+    : convention === 'signed'
     ? hasAmountDirectionConflict({ transactionAmountMinor: transactionMinor, settlementAmountMinor: settlementMinor, direction })
     : direction === 'debit' && (transactionMinor < 0 || settlementMinor < 0)
   const amountDirectionUnclear = sourceDirectionUnclear || signsDisagree || directionConflict

@@ -1,3 +1,4 @@
+import { hasUnresolvedDirection, effectiveDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription, matchesTransactionDescription } from '../../core/descriptionNormalizer'
 import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
@@ -17,7 +18,7 @@ const compareDates = (left: string, right: string) => left < right ? -1 : left >
 /** Sort repeated text groups once, then apply the historical date tie within each. */
 function sortRepeatedText(transactions: Transaction[], key: 'description' | 'direction', direction: number): Transaction[] | undefined {
   if (transactions.length < 256) return undefined
-  const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : tx[key]
+  const valueOf = (tx: Transaction) => key === 'description' ? transactionDisplayDescription(tx) : effectiveDirection(tx)
   const values = new Set(transactions.map(valueOf))
   // Mostly unique text cannot amortize a second sort. Keep its direct comparator.
   if (values.size > transactions.length / 4) return undefined
@@ -45,8 +46,8 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
     if (repeated) return repeated
   }
   return [...transactions].sort((a, b) => {
-    const left = sortKey === 'description' ? transactionDisplayDescription(a) : a[sortKey]
-    const right = sortKey === 'description' ? transactionDisplayDescription(b) : b[sortKey]
+    const left = sortKey === 'description' ? transactionDisplayDescription(a) : sortKey === 'direction' ? effectiveDirection(a) : a[sortKey]
+    const right = sortKey === 'description' ? transactionDisplayDescription(b) : sortKey === 'direction' ? effectiveDirection(b) : b[sortKey]
     if (left === null || right === null) {
       if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
       return left === null ? 1 : -1
@@ -55,7 +56,8 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
     if (sortKey === 'settlementAmountMinor') {
       const currencyOrder = compareDates(a.settlementCurrency, b.settlementCurrency)
       if (currencyOrder) return currencyOrder
-      const amountOrder = a.settlementAmountMinor < b.settlementAmountMinor ? -1 : a.settlementAmountMinor > b.settlementAmountMinor ? 1 : 0
+      const amountA = effectiveAmountForDirection(a) ?? a.settlementAmountMinor, amountB = effectiveAmountForDirection(b) ?? b.settlementAmountMinor
+      const amountOrder = amountA < amountB ? -1 : amountA > amountB ? 1 : 0
       return amountOrder ? amountOrder * direction : compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
     }
     if (left === right) return compareDates(a.transactionDate ?? '', b.transactionDate ?? '')
@@ -77,7 +79,7 @@ export function TransactionsPage() {
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return applyFilters(visibleTransactions, filters).filter((tx) => {
-      if (directionFilter && tx.direction !== directionFilter) return false
+      if (directionFilter && ((hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank') || effectiveDirection(tx) !== directionFilter)) return false
       if (!needle) return true
       return (
         matchesTransactionDescription(tx, needle) ||
@@ -234,10 +236,12 @@ export function TransactionsPage() {
                     </td>
                     <td className="nowrap muted">{tx.settlementCurrency}</td>
                     <td className={`num ${tx.settlementAmountMinor < 0 ? 'amount-neg' : ''}`}>
-                      {formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {formatMinor(effectiveAmountForDirection(tx) ?? tx.settlementAmountMinor, tx.settlementCurrency)}
+                      {tx.directionResolution ? <small>原始：{formatMinor(tx.settlementAmountMinor, tx.settlementCurrency)}</small>
+                        : effectiveAmountForDirection(tx) === null ? <small>方向待解决，未计入统计</small> : null}
                     </td>
                     <td className="nowrap">
-                      <DirectionBadge direction={tx.direction} />
+                      {hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank' ? '待选择' : <DirectionBadge direction={effectiveDirection(tx)} />}
                     </td>
                     <td>
                       <select

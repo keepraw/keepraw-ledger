@@ -1,4 +1,4 @@
-import { hasAmountDirectionConflict } from './direction'
+import { hasUnresolvedDirection, effectiveAmountForDirection, effectiveDirection } from './direction'
 import { formatMinor } from './money'
 import type {
   ReconciliationResult,
@@ -132,16 +132,16 @@ export function reconcileStatementTransactions(
   for (const tx of transactions) {
     if (tx.statementId !== statement.id) continue
     if (tx.reviewStatus === 'rejected') continue
-    if (hasAmountDirectionConflict(tx) || (tx.flags.includes('amount_direction_unclear') && tx.reviewStatus !== 'confirmed')) directionConflicts++
+    if (hasUnresolvedDirection(tx)) directionConflicts++
     if (tx.postingExclusion) continue
     transactionCount += 1
     if (tx.settlementCurrency !== currency) {
       ignoredCurrency += 1
       continue
     }
-    transactionTotalMinor += tx.settlementAmountMinor
-    if (tx.direction === 'debit') debitTotalMinor += tx.settlementAmountMinor
-    else creditTotalMinor -= tx.settlementAmountMinor
+    transactionTotalMinor += (effectiveAmountForDirection(tx) ?? 0)
+    if (effectiveDirection(tx) === 'debit') debitTotalMinor += (effectiveAmountForDirection(tx) ?? 0)
+    else creditTotalMinor -= (effectiveAmountForDirection(tx) ?? 0)
   }
 
   // --- 1. transaction count -------------------------------------------------

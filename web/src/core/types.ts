@@ -51,6 +51,11 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
 /** Bank-stated debit/credit direction. Positive amount always means money leaves the card. */
 export type Direction = 'debit' | 'credit'
 
+/** Independent bank evidence. Missing includes contradictory bank direction fields. */
+export interface DirectionEvidence { kind: 'bank' | 'missing'; detail: string }
+/** Explicit human decision; stored direction and signed source amounts remain immutable. */
+export interface DirectionResolution { method: 'accept_bank' | 'user_choice'; direction: Direction }
+
 /** Independent evidence for excluding an informational, unposted original. */
 export interface PostingExclusion {
   source: 'bocom_plan' | 'bank_original_marker' | 'legacy_installment_exclusion'
@@ -126,6 +131,10 @@ export interface Transaction {
   /** Legacy identity metadata only. Never use for finance, direction or review. */
   type: TransactionType
   direction: Direction
+  /** New native exports explicitly carry full review flags; do not apply the old phantom-confidence repair. */
+  reviewFlagsSource?: 'native_export'
+  directionEvidence?: DirectionEvidence
+  directionResolution?: DirectionResolution
   postingExclusion?: PostingExclusion | null
   category: Category
   /** Parser confidence (0–1). Native XLSX history uses 0 for unavailable metadata;

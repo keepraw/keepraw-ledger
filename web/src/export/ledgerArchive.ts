@@ -1,3 +1,4 @@
+import { effectiveDirection, effectiveAmountForDirection, hasUnresolvedDirection } from '../core/direction'
 import { transactionDisplayDescription } from '../core/descriptionNormalizer'
 /**
  * Human-readable ledger archive (XLSX).
@@ -15,7 +16,8 @@ import { transactionDisplayDescription } from '../core/descriptionNormalizer'
  *
  * Guarantees:
  * - Reuses the existing TypeScript data model (`Transaction`, `Statement`).
- * - Preserves exact stored values: no recalculation, no currency conversion.
+ * - Preserves exact source amounts in Technical Metadata; human rows show effective
+ *   amounts after explicit direction resolution. No currency conversion.
  * - Amounts are rendered from integer minor units via `minorToDecimalString`
  *   and stored as text so Excel/LibreOffice never lose precision to floats.
  *   Negative values, multi-currency legs and zero-decimal currencies (JPY)
@@ -72,6 +74,8 @@ export const LEDGER_METADATA_HEADERS = [
   'raw_description',
   'legacy_type_identity_only',
   'posting_exclusion',
+  'stored_direction', 'raw_transaction_amount_minor', 'raw_settlement_amount_minor',
+  'direction_evidence', 'direction_resolution', 'raw_text',
 ] as const
 
 export type LedgerArchiveCell = string | number | null
@@ -109,11 +113,11 @@ export function transactionToHumanRow(transaction: Transaction): LedgerArchiveCe
     text(transaction.transactionDate ?? ''),
     text(transaction.postingDate ?? ''),
     text(transactionDisplayDescription(transaction)),
-    text(directionLabel(transaction.direction)),
+    text(hasUnresolvedDirection(transaction) ? '方向待解决（未入账）' : directionLabel(effectiveDirection(transaction))),
     text(transaction.transactionCurrency),
-    text(minorToDecimalString(transaction.transactionAmountMinor, transaction.transactionCurrency)),
+    text(minorToDecimalString(effectiveAmountForDirection(transaction, 'transaction') ?? transaction.transactionAmountMinor, transaction.transactionCurrency)),
     text(transaction.settlementCurrency),
-    text(minorToDecimalString(transaction.settlementAmountMinor, transaction.settlementCurrency)),
+    text(minorToDecimalString(effectiveAmountForDirection(transaction) ?? transaction.settlementAmountMinor, transaction.settlementCurrency)),
   ]
 }
 
@@ -140,6 +144,9 @@ export function transactionToMetadataRow(
     text(transaction.rawDescription),
     text(transaction.type),
     text(transaction.postingExclusion ? JSON.stringify(transaction.postingExclusion) : ''),
+    text(transaction.direction), String(transaction.transactionAmountMinor), String(transaction.settlementAmountMinor),
+    text(transaction.directionEvidence ? JSON.stringify(transaction.directionEvidence) : ''),
+    text(transaction.directionResolution ? JSON.stringify(transaction.directionResolution) : ''), text(transaction.rawText),
   ]
 }
 

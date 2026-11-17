@@ -1,4 +1,4 @@
-import { isPostedTransaction } from './direction'
+import { effectiveAmountForDirection, effectiveDirection, isPostedTransaction } from './direction'
 import { monthKey } from './dates'
 import { normalizeCurrencyCode } from './money'
 import { summarizeTransactions, type DirectionTotals } from './reconcile'
@@ -51,8 +51,8 @@ export function monthlyTrend(transactions: Transaction[]): Array<{ month: string
     const key = monthKey(tx.transactionDate)
     const bucket = buckets.get(key) ?? { debit: 0, credit: 0 }
     if (!isPostedTransaction(tx)) continue
-    if (tx.direction === 'credit') bucket.credit += -tx.settlementAmountMinor
-    else bucket.debit += tx.settlementAmountMinor
+    if (effectiveDirection(tx) === 'credit') bucket.credit += -(effectiveAmountForDirection(tx) ?? 0)
+    else bucket.debit += (effectiveAmountForDirection(tx) ?? 0)
     buckets.set(key, bucket)
   }
   return [...buckets.entries()]
@@ -65,9 +65,9 @@ export function groupBy(transactions: Transaction[], key: (tx: Transaction) => s
   for (const tx of transactions) {
     if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
     if (tx.reviewStatus === 'rejected') continue
-    if (!isPostedTransaction(tx) || tx.direction !== 'debit') continue
+    if (!isPostedTransaction(tx) || effectiveDirection(tx) !== 'debit') continue
     const label = key(tx)
-    totals.set(label, (totals.get(label) ?? 0) + tx.settlementAmountMinor)
+    totals.set(label, (totals.get(label) ?? 0) + (effectiveAmountForDirection(tx) ?? 0))
   }
   return [...totals.entries()]
     .map(([label, value]) => ({ label, value }))
@@ -78,8 +78,8 @@ export function groupByBank(transactions: Transaction[]): Array<{ label: string;
   const totals = new Map<string, number>()
   for (const tx of transactions) {
     if (normalizeCurrencyCode(tx.settlementCurrency) !== 'CNY') continue
-    if (!isPostedTransaction(tx) || tx.direction !== 'debit') continue
-    totals.set(tx.bank, (totals.get(tx.bank) ?? 0) + tx.settlementAmountMinor)
+    if (!isPostedTransaction(tx) || effectiveDirection(tx) !== 'debit') continue
+    totals.set(tx.bank, (totals.get(tx.bank) ?? 0) + (effectiveAmountForDirection(tx) ?? 0))
   }
   return [...totals.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
 }
@@ -119,5 +119,5 @@ export function untrustedAmount(transactions: Transaction[], statements: Stateme
   )
   return transactions
     .filter((tx) => untrusted.has(tx.statementId) && isPostedTransaction(tx) && normalizeCurrencyCode(tx.settlementCurrency) === 'CNY')
-    .reduce((sum, tx) => sum + Math.abs(tx.settlementAmountMinor), 0)
+    .reduce((sum, tx) => sum + Math.abs((effectiveAmountForDirection(tx) ?? 0)), 0)
 }

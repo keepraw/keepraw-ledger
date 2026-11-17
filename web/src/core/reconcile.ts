@@ -1,4 +1,4 @@
-import { hasAmountDirectionConflict, isPostedTransaction } from './direction'
+import { hasUnresolvedDirection, effectiveAmountForDirection, effectiveDirection, isPostedTransaction } from './direction'
 import { formatMinor, normalizeCurrencyCode } from './money'
 import type { ReconciliationCheck, ReconciliationResult, StatementSummary, Transaction } from './types'
 
@@ -28,7 +28,7 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
 
   const unrejected = transactions.filter((tx) => tx.reviewStatus !== 'rejected')
   const active = unrejected.filter(tx => !tx.postingExclusion)
-  const conflicts = unrejected.filter(tx => hasAmountDirectionConflict(tx) || (tx.flags.includes('amount_direction_unclear') && tx.reviewStatus !== 'confirmed'))
+  const conflicts = unrejected.filter(tx => hasUnresolvedDirection(tx))
   if (conflicts.length) checks.push({ id: 'amount_direction', label: '交易金额与借贷方向一致', status: 'mismatch',
     expectedMinor: 0, actualMinor: conflicts.length, differenceMinor: null, detail: `${conflicts.length} 笔交易存在借贷方向或金额符号冲突，需人工复核` })
   const otherCurrencies = active.filter((tx) => normalizeCurrencyCode(tx.settlementCurrency) !== normalizeCurrencyCode(currency))
@@ -168,13 +168,14 @@ function detailCheck(
   }
 
   const relevant = transactions.filter((tx) => {
-    if (tx.direction !== direction) return false
+    if (hasUnresolvedDirection(tx)) return false
+    if (effectiveDirection(tx) !== direction) return false
     if (tx.settlementCurrency !== currency) return false
     return !tx.postingExclusion
   })
 
   // Credit rows are stored as negative amounts, so compare magnitudes.
-  const actual = relevant.reduce((sum, tx) => sum + (tx.direction === 'credit' ? -tx.settlementAmountMinor : tx.settlementAmountMinor), 0)
+  const actual = relevant.reduce((sum, tx) => sum + (effectiveDirection(tx) === 'credit' ? -(effectiveAmountForDirection(tx) ?? 0) : (effectiveAmountForDirection(tx) ?? 0)), 0)
   const difference = expected - actual
   return {
     id,
@@ -206,8 +207,8 @@ export function summarizeTransactions(transactions: Transaction[], currency = 'C
   for (const tx of transactions) {
     if (!isPostedTransaction(tx)) continue
     if (normalizeCurrencyCode(tx.settlementCurrency) !== normalizeCurrencyCode(currency)) continue
-    if (tx.direction === 'debit') result.billingDebitMinor += tx.settlementAmountMinor
-    else result.billingCreditMinor += -tx.settlementAmountMinor
+    if (effectiveDirection(tx) === 'debit') result.billingDebitMinor += (effectiveAmountForDirection(tx) ?? 0)
+    else result.billingCreditMinor += -(effectiveAmountForDirection(tx) ?? 0)
     result.transactionCount++
   }
   result.netMinor = result.billingDebitMinor - result.billingCreditMinor
