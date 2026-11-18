@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
-import { reviewBatchFixture } from '../tests/fixtures/reviewBatch'
+import { formatMinor } from '../src/core/money'
 import type { Transaction } from '../src/core/types'
+import { nativeTransaction } from '../tests/fixtures/nativeLedger'
+import { mixedDirectionReviewBatchFixture, reviewBatchFixture } from '../tests/fixtures/reviewBatch'
 
 async function stored(page: Page) {
   return page.evaluate(async () => {
@@ -54,6 +56,8 @@ test('18,286 rows: bounded DOM, cross-page selection, atomic confirmation/exclus
   await page.getByRole('button', { name: '批量确认', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '批量确认交易' })
   await expect(dialog).toContainText('18,285')
+  await expect(dialog).toContainText('确认后将接受所选交易当前已有的借贷方向，并清除所选交易的复核标记。交易原始金额和银行来源证据不会改变。')
+  await expect(dialog).not.toContainText('方向问题必须先逐笔明确解决。')
   await expect(dialog).toContainText('清除疑似重复标记')
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   expect(await stored(page)).toEqual(before)
@@ -168,4 +172,115 @@ test('50/100/200 page sizes and multi-row exclusion preserve original flags and 
   const after = await stored(page)
   expect(after.transactions).toEqual(before.transactions.map(row => selected.has(row.id) ? { ...row, reviewStatus: 'rejected' } : row))
   expect(after.notes).toEqual(before.notes)
+})
+
+test('946 mixed-direction rows: one-click bulk confirmation accepts stored directions, reconciles statements and updates Dashboard without double-posting', async ({ page }) => {
+  test.setTimeout(120_000)
+  const fixture = mixedDirectionReviewBatchFixture(946)
+  await page.goto('/#/settings')
+  await page.getByTestId('demo-toggle').uncheck()
+  await page.evaluate(async data => {
+    const url = '/src/db/db.ts', { db } = await import(url)
+    await db.transaction('rw', db.transactions, db.statements, db.imports, db.reviewNotes, async () => {
+      await db.statements.bulkPut(data.statements)
+      await db.transactions.bulkPut(data.transactions)
+      await db.imports.bulkPut(data.imports)
+      await db.reviewNotes.bulkPut(data.notes)
+    })
+  }, { statements: fixture.statements, transactions: fixture.transactions, imports: fixture.imports, notes: fixture.notes })
+  await page.reload()
+
+  const before = await stored(page)
+  await review(page, 946)
+  await expect(page.getByRole('button', { name: '账单对账 2', exact: true })).toBeVisible()
+
+  // Single-row confirmation stays disabled on rows with unresolved direction.
+  const unresolvedRow = visibleRows(page).filter({ has: page.getByTestId('direction-review') }).first()
+  await expect(unresolvedRow.getByRole('button', { name: '确认', exact: true })).toBeDisabled()
+
+  await page.getByRole('button', { name: '全选全部待复核 946 笔', exact: true }).click()
+  await expect(page.getByTestId('review-selection-count')).toHaveText('已选择 946 笔')
+  await page.getByRole('button', { name: '批量确认', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: '批量确认交易' })
+  await expect(dialog).toContainText('确定批量确认 946 笔交易吗？')
+  await expect(dialog).toContainText('确认后将接受所选交易当前已有的借贷方向，并清除所选交易的复核标记。交易原始金额和银行来源证据不会改变。')
+  await expect(dialog).not.toContainText('方向问题必须先逐笔明确解决。')
+  await dialog.getByRole('button', { name: '确定批量确认', exact: true }).click()
+
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '交易复核 0', exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '账单对账 0', exact: true })).toBeVisible()
+
+  // Both statements pass in the reconciliation centre as well.
+  await page.goto('/#/reconciliation')
+  await expect(page.getByTestId('recon-passed')).toHaveText('2')
+  await expect(page.getByTestId('recon-mismatch')).toHaveText('0')
+
+  // Dashboard totals match exact expected minor units without double-counting.
+  await page.goto('/#/dashboard')
+  await expect(page.locator('.stat').filter({ hasText: '借记总额' }).first()).toContainText(`¥${formatMinor(fixture.expectedTotals.billingDebitMinor)}`)
+  await expect(page.locator('.stat').filter({ hasText: '贷记总额' }).first()).toContainText(`¥${formatMinor(fixture.expectedTotals.billingCreditMinor)}`)
+  await expect(page.locator('.stat').filter({ hasText: '账单入账净额' })).toContainText(`¥${formatMinor(fixture.expectedTotals.netMinor)}`)
+  await expect(page.locator('.stat').filter({ hasText: '交易笔数' })).toContainText(String(fixture.expectedTotals.transactionCount))
+  await expect(page.getByTestId('duplicate-summary-warning')).toHaveCount(0)
+
+  const after = await stored(page)
+  expect(after.transactions).toHaveLength(before.transactions.length)
+  expect(after.notes).toEqual(before.notes)
+  expect(after.imports).toEqual(before.imports)
+  expect(after.statements.every((s: { status: string; reconciliation: { status: string } }) => s.status === 'reconciled' && s.reconciliation.status === 'passed')).toBe(true)
+})
+
+test('structural dual-column missing-evidence error reports explicitly in dialog and rolls back entire batch', async ({ page }) => {
+  const fixture = mixedDirectionReviewBatchFixture(15)
+  const unbindableBoc = nativeTransaction(999, {
+    statementId: fixture.statements[0]!.id,
+    bank: 'boc', cardLast4: '0012', direction: 'debit',
+    transactionCurrency: 'CNY', transactionAmountMinor: 15200,
+    settlementCurrency: 'CNY', settlementAmountMinor: 15200,
+    directionEvidence: { kind: 'missing', detail: '中国银行同一行同时出现借记和贷记金额列，无法确定唯一方向' },
+    flags: ['amount_direction_unclear'], reviewStatus: 'pending',
+  })
+  await page.goto('/#/settings')
+  await page.getByTestId('demo-toggle').uncheck()
+  await page.evaluate(async data => {
+    const url = '/src/db/db.ts', { db } = await import(url)
+    await db.transaction('rw', db.transactions, db.statements, db.imports, db.reviewNotes, async () => {
+      await db.statements.bulkPut(data.statements)
+      await db.transactions.bulkPut(data.transactions)
+      await db.imports.bulkPut(data.imports)
+      await db.reviewNotes.bulkPut(data.notes)
+    })
+  }, { statements: fixture.statements, transactions: [...fixture.transactions, unbindableBoc], imports: fixture.imports, notes: fixture.notes })
+  await page.reload()
+
+  const before = await stored(page)
+  await review(page, 16)
+  await page.getByRole('button', { name: '全选全部待复核 16 笔', exact: true }).click()
+  await page.getByRole('button', { name: '批量确认', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '批量确认交易' })
+  await dialog.getByRole('button', { name: '确定批量确认', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('缺少独立双列金额来源证据')
+  await expect(page.getByTestId('review-selection-count')).toHaveText('已选择 16 笔')
+  expect(await stored(page)).toEqual(before)
+})
+
+test('Demo bulk confirmation clears demo review queue in memory without touching real ledger or revision', async ({ page }) => {
+  await seed(page, 10)
+  await page.goto('/#/settings')
+  await page.getByTestId('demo-toggle').check()
+  await expect.poll(() => page.evaluate(async () => { const url = '/src/db/db.ts'; return (await import(url)).loadSettings().then((s: { demoMode: boolean }) => s.demoMode) })).toBe(true)
+  const before = await stored(page)
+  const revision = await page.evaluate(async () => { const url = '/src/db/ledgerRevision.ts'; return (await import(url)).readLedgerRevision() })
+  await page.goto('/#/review')
+  await page.getByRole('button', { name: /交易复核/ }).click()
+  await page.getByRole('button', { name: /^全选全部待复核/ }).click()
+  await page.getByRole('button', { name: '批量确认', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '批量确认交易' })
+  await expect(dialog).toContainText('确认后将接受所选交易当前已有的借贷方向，并清除所选交易的复核标记。交易原始金额和银行来源证据不会改变。')
+  await dialog.getByRole('button', { name: '确定批量确认', exact: true }).click()
+  await expect(page.getByRole('button', { name: '交易复核 0', exact: true })).toBeVisible()
+  expect(await stored(page)).toEqual(before)
+  expect(await page.evaluate(async () => { const url = '/src/db/ledgerRevision.ts'; return (await import(url)).readLedgerRevision() })).toEqual(revision)
 })

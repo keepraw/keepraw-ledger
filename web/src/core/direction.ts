@@ -79,7 +79,7 @@ export function isPostedTransaction(row: Transaction): boolean {
 }
 
 /** Validate explicit decisions and keep unrelated review reasons intact. Shared
- * by durable edits, bulk review and the isolated in-memory demo. */
+ * by durable single-row edits and the isolated in-memory demo. */
 export function applyReviewPatch(current: Transaction, patch: Partial<Transaction>): Transaction {
   const next = { ...current, ...patch }
   if (patch.directionResolution !== undefined) {
@@ -97,6 +97,50 @@ export function applyReviewPatch(current: Transaction, patch: Partial<Transactio
     throw new Error('请先明确接受银行方向，或选择借记/贷记；普通确认不能解决方向问题。')
   } else if (hasUnresolvedDirection(current) && !next.flags.includes('amount_direction_unclear')) {
     next.flags = [...next.flags, 'amount_direction_unclear']
+  }
+  return next
+}
+
+/** Build the explicit direction decision that accepts `row.direction` during bulk confirmation. */
+export function buildAcceptedDirectionResolution(row: Transaction): NonNullable<Transaction['directionResolution']> {
+  if (row.direction !== 'debit' && row.direction !== 'credit') {
+    throw new Error(`交易 ${row.id} 缺少有效的借贷方向，无法批量确认；本次操作未提交。`)
+  }
+  if (needsBankColumnChoice(row)) {
+    if (!row.bankColumnAmounts) {
+      throw new Error(`交易 ${row.id} 缺少独立双列金额来源证据，无法自动绑定金额列，请重新导入原始 PDF 账单；本次操作未提交。`)
+    }
+    return {
+      method: 'user_choice',
+      direction: row.direction,
+      amountSource: row.direction === 'debit' ? 'debit_column' : 'credit_column',
+    }
+  }
+  return {
+    method: row.directionEvidence?.kind === 'bank' ? 'accept_bank' : 'user_choice',
+    direction: row.direction,
+  }
+}
+
+/** Bulk confirmation accepts each selected row's stored direction and clears all
+ * review flags, while keeping single-row confirmation's explicit-choice guard intact. */
+export function applyBulkReviewDecision(current: Transaction, decision: 'confirmed' | 'rejected'): Transaction {
+  if (decision === 'rejected') {
+    return applyReviewPatch(current, { reviewStatus: 'rejected', flags: current.flags })
+  }
+  if (current.direction !== 'debit' && current.direction !== 'credit') {
+    throw new Error(`交易 ${current.id} 缺少有效的借贷方向，无法批量确认；本次操作未提交。`)
+  }
+  if (!Number.isSafeInteger(current.transactionAmountMinor) || !Number.isSafeInteger(current.settlementAmountMinor) ||
+    !validDirectionMetadata(current)) {
+    throw new Error(`交易 ${current.id} 的金额或方向来源数据结构无效，无法批量确认；本次操作未提交。`)
+  }
+  const resolved = hasUnresolvedDirection(current)
+    ? applyReviewPatch(current, { directionResolution: buildAcceptedDirectionResolution(current) })
+    : current
+  const next = applyReviewPatch(resolved, { reviewStatus: 'confirmed', flags: [] })
+  if (!validDirectionMetadata(next) || hasUnresolvedDirection(next)) {
+    throw new Error(`交易 ${current.id} 无法生成有效的方向确认记录；本次操作未提交。`)
   }
   return next
 }

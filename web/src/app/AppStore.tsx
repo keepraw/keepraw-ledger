@@ -1,4 +1,4 @@
-import { applyReviewPatch } from '../core/direction'
+import { applyBulkReviewDecision, hasUnresolvedDirection } from '../core/direction'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../db/db'
 import {
@@ -409,10 +409,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const byId = new Map(current.transactions.map(row => [row.id, row]))
         const rows = ownedIds.map(id => byId.get(id))
         if (rows.some(row => !row?.isDemo || row.reviewStatus === 'rejected' ||
-          (row.reviewStatus !== 'pending' && row.flags.length === 0))) throw new Error('所选演示交易不再待复核，请重新选择。')
+          (row.reviewStatus !== 'pending' && row.flags.length === 0 && !hasUnresolvedDirection(row)))) throw new Error('所选演示交易不再待复核，请重新选择。')
         const selected = new Set(ownedIds)
         const transactions = current.transactions.map(row => selected.has(row.id)
-          ? applyReviewPatch(row, { reviewStatus: decision, flags: decision === 'confirmed' ? [] : row.flags }) : row)
+          ? applyBulkReviewDecision(row, decision) : row)
         const affected = new Set(rows.map(row => row!.statementId))
         const grouped = new Map<string, Transaction[]>()
         for (const row of transactions) {

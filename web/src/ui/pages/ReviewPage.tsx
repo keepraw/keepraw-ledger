@@ -139,7 +139,7 @@ export function ReviewPage() {
       {confirmation && confirmation.demoMode === state.demoMode ? (
         <dialog ref={confirmationRef} className="card card-pad stack" style={{ maxWidth: 'min(36rem, calc(100vw - 2rem))', margin: 'auto' }} onCancel={event => { if (reviewBusy) event.preventDefault(); else setConfirmation(null) }} aria-modal="true" aria-label={confirmation.decision === 'confirmed' ? '批量确认交易' : '批量排除交易'}>
           <h2>确定批量{confirmation.decision === 'confirmed' ? '确认' : '排除'} {confirmation.ids.length.toLocaleString('en-US')} 笔交易吗？</h2>
-          <p>{confirmation.decision === 'confirmed' ? '确认后会清空所选交易的复核标记；方向问题必须先逐笔明确解决。' : '排除后会保留原有标记，所选交易将退出复核队列。'}</p>
+          <p>{confirmation.decision === 'confirmed' ? '确认后将接受所选交易当前已有的借贷方向，并清除所选交易的复核标记。交易原始金额和银行来源证据不会改变。' : '排除后会保留原有标记，所选交易将退出复核队列。'}</p>
           {confirmation.decision === 'confirmed' && confirmation.ids.some(id => flaggedById.get(id)?.flags.includes('suspected_duplicate')) ? <p className="notice notice-warn">所选记录包含疑似重复交易：确认后会清除疑似重复标记，这些交易将不再因该标记进入复核队列。请先核对来源和交易次数。</p> : null}
           {confirmation.ids.some(id => !flaggedById.has(id)) ? <p role="alert">待复核记录已变化，请取消并重新选择。</p> : null}
           {reviewError ? <p className="notice notice-warn" role="alert">{reviewError}</p> : null}

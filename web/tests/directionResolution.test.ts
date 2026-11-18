@@ -132,7 +132,7 @@ for (const kind of ['bank', 'missing'] as const) for (const direction of ['debit
   })
 }
 
-it('ICBC missing positive marker stays unresolved after ordinary/bulk confirmation; explicit choice is required', async () => {
+it('ICBC missing positive marker stays unresolved after ordinary single confirmation, while bulk confirmation accepts stored direction as user_choice', async () => {
   const doc = await document(SYNTHETIC_ICBC_HTML)
   for (const table of doc.tables) for (const row of table.rows) if (row.includes('手机银行还款转入')) row[6] = '3000.00/RMB'
   const parsed = icbcParser.parse(doc)
@@ -141,10 +141,16 @@ it('ICBC missing positive marker stays unresolved after ordinary/bulk confirmati
   expect(row.directionEvidence?.kind).toBe('missing')
   await persistImportResults([result])
   const before = await readSnapshot()
-  await expect(reviewTransactions(result.transactions.map(tx => tx.id), 'confirmed')).rejects.toThrow(/方向/)
+  await expect(patchTransaction({ id: row.id, reviewStatus: 'confirmed', flags: [] })).rejects.toThrow(/方向/)
   expect(await readSnapshot()).toEqual(before)
   expect(() => applyReviewPatch(row, { directionResolution: { method: 'accept_bank', direction: 'debit' } })).toThrow(/方向/)
   expect(summarize([resolved(row, 'credit')]).billingCreditMinor).toBe(300000)
+  await reviewTransactions(result.transactions.map(tx => tx.id), 'confirmed')
+  const confirmed = (await db.transactions.get(row.id))!
+  expect(confirmed).toMatchObject({ id: row.id, fingerprint: row.fingerprint, occurrence: row.occurrence,
+    direction: 'debit', transactionAmountMinor: row.transactionAmountMinor, settlementAmountMinor: row.settlementAmountMinor,
+    directionEvidence: row.directionEvidence, directionResolution: { method: 'user_choice', direction: 'debit' },
+    flags: [], reviewStatus: 'confirmed', rawText: row.rawText })
 })
 it('direction resolution removes only its own flag; ordinary review handles the remaining reasons separately', () => {
   const row = { ...issue('debit'), flags: ['amount_direction_unclear', 'suspected_duplicate', 'low_confidence'] as Transaction['flags'] }

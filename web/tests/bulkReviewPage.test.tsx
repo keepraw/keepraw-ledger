@@ -29,6 +29,8 @@ it('bounds rendered rows, retains cross-page selection, confirms counts, and pre
   fireEvent.click(screen.getByRole('button', { name: /^批量确认$/ }))
   const dialog = screen.getByRole('dialog', { name: '批量确认交易' })
   expect(dialog).toHaveTextContent('250')
+  expect(dialog).toHaveTextContent('确认后将接受所选交易当前已有的借贷方向，并清除所选交易的复核标记。交易原始金额和银行来源证据不会改变。')
+  expect(dialog).not.toHaveTextContent('方向问题必须先逐笔明确解决。')
   expect(dialog).toHaveTextContent('清除疑似重复标记')
   fireEvent.click(within(dialog).getByRole('button', { name: '确定批量确认' }))
   await screen.findByText('synthetic atomic failure')
