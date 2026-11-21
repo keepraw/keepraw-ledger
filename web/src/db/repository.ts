@@ -1,4 +1,4 @@
-import { isPostingExcluded, bankColumnSelectionKey, applyReviewPatch, effectiveDirection, hasResolvedDirection } from '../core/direction'
+import { isPostingExcluded, bankColumnSelectionKey, applyReviewPatch, applyBulkReviewDecision, effectiveDirection, hasResolvedDirection, hasUnresolvedDirection } from '../core/direction'
 import { normalizeRestoredTransaction } from './restoreTransaction'
 import { withoutLegacyMerchant } from './transactionRecord'
 import type { ExistingSnapshot, IngestResult } from '../core/ingest'
@@ -173,7 +173,7 @@ export async function updateTransactions(transactions: Transaction[]): Promise<v
   })
 }
 
-/** Re-read latest rows and change only review fields. One commit or none, including derived statements. */
+/** Re-read latest rows and apply bulk review decisions (confirm accepts stored direction). One commit or none, including derived statements. */
 export async function reviewTransactions(ids: readonly string[], decision: 'confirmed' | 'rejected'): Promise<{
   transactions: Transaction[]; statements: Statement[]
 }> {
@@ -184,10 +184,10 @@ export async function reviewTransactions(ids: readonly string[], decision: 'conf
     if (settings?.demoMode) throw new Error('演示模式下不能修改真实账本。')
     const rows = await backupRows(db.transactions, ownedIds)
     if (rows.some(row => !row || row.isDemo || row.reviewStatus === 'rejected' ||
-      (row.reviewStatus !== 'pending' && row.flags.length === 0))) {
+      (row.reviewStatus !== 'pending' && row.flags.length === 0 && !hasUnresolvedDirection(row)))) {
       throw new Error('所选交易已不存在或不再待复核，请刷新后重新选择；本次操作未写入。')
     }
-    const transactions = rows.map(row => applyReviewPatch(row!, { reviewStatus: decision, flags: decision === 'confirmed' ? [] : row!.flags }))
+    const transactions = rows.map(row => applyBulkReviewDecision(row!, decision))
     for (let offset = 0; offset < transactions.length; offset += 2000) {
       await db.transactions.bulkPut(transactions.slice(offset, offset + 2000))
     }
