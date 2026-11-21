@@ -313,7 +313,7 @@ describe('946-transaction realistic batch confirmation, reconciliation, rollback
 
     fireEvent.click(within(dialog).getByRole('button', { name: '确定批量确认' }))
 
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await vi.waitFor(() => expect(dialog).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: '交易复核 0' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '账单对账 0' })).toBeInTheDocument()
     expect(screen.getByTestId('recon-passed')).toHaveTextContent('2')
