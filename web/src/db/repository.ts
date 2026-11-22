@@ -94,8 +94,10 @@ export async function persistImportResults(results: IngestResult[], expectedRevi
         const fields = ['previousBalanceMinor', 'currentBalanceMinor', 'newDebitMinor', 'newCreditMinor', 'chargeMinor', 'interestMinor'] as const
         if (getStatementExpectedTotal(current).currency !== getStatementExpectedTotal(result.statement).currency ||
           fields.some(field => current.summary[field] !== result.statement!.summary[field]) ||
-          (current.summary.adjustmentMinor ?? null) !== (result.statement.summary.adjustmentMinor ?? null) ||
-          (current.summary.detailBasis ?? 'gross') !== (result.statement.summary.detailBasis ?? 'gross')) {
+          (current.summary.adjustmentMinor !== undefined &&
+            current.summary.adjustmentMinor !== (result.statement.summary.adjustmentMinor ?? null)) ||
+          (current.summary.detailBasis !== undefined &&
+            current.summary.detailBasis !== (result.statement.summary.detailBasis ?? 'gross'))) {
           throw new Error('同一账期的银行汇总存在冲突，本次导入已回滚，请核对原始账单。')
         }
       }
