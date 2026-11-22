@@ -13,6 +13,8 @@ import { createJsonBlob } from '../backup/json'
 import { canAcknowledgeStatement, deriveStatementState, normalizeHistoricalStatements } from '../core/statementState'
 import { getStatementExpectedTotal } from '../core/reconciliation'
 import { MAX_ENTRY_BYTES } from '../backup/zipSafety'
+import { inferCategory, normalizedMerchant } from '../core/classify'
+import { CATEGORIES, type Category } from '../core/types'
 export { validateBackup } from '../backup/validation'
 
 /** Caller holds the statements + transactions write transaction. Indexed by statementId. */
@@ -179,6 +181,34 @@ export async function patchTransactionWithStatements(patch: Partial<Transaction>
 
 export async function updateTransaction(transaction: Transaction): Promise<void> {
   await patchTransaction(transaction)
+}
+
+export async function categorizeUncategorized(reference?: { id: string; category: Category }): Promise<Transaction[]> {
+  const ownedReference = reference ? { ...reference } : undefined
+  return db.transaction('rw', db.transactions, db.settings, async () => {
+    const settings = (await db.settings.get('app'))?.value as { demoMode?: boolean } | undefined
+    if (settings?.demoMode) throw new Error('演示模式下不能修改真实账本。')
+    let merchant: string | undefined
+    if (ownedReference) {
+      if (!CATEGORIES.includes(ownedReference.category) || ownedReference.category === '未分类') throw new Error('请选择有效的商户分类。')
+      const source = await db.transactions.get(ownedReference.id)
+      if (!source || source.isDemo || source.category !== ownedReference.category) throw new Error('来源交易或分类已变化，请刷新后重试。')
+      merchant = normalizedMerchant(source.description)
+      if (!merchant) return []
+    }
+    const changed: Transaction[] = []
+    await db.transactions.toCollection().modify(row => {
+      if (row.isDemo || row.category !== '未分类') return false
+      const category = ownedReference
+        ? normalizedMerchant(row.description) === merchant ? ownedReference.category : '未分类'
+        : inferCategory(row.description)
+      if (category === '未分类') return false
+      row.category = category
+      changed.push({ ...row })
+    })
+    if (changed.length) await bumpLedgerRevision()
+    return changed
+  })
 }
 
 export async function updateTransactions(transactions: Transaction[]): Promise<void> {

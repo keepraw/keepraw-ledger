@@ -37,20 +37,29 @@ export function legacyTypeForIdentity(bankToken: string, direction: Direction): 
   return type ?? (direction === 'debit' ? 'purchase' : 'payment')
 }
 
+const PAYMENT_PREFIX = /^(?:支付宝|财付通|微信支付|微信|网银在线|银联|云闪付|网上消费|境外消费|跨境消费|消费)(?:[\s:：,，\-－–—/|｜]+|$)/iu
+
+export function normalizedMerchant(description: string): string {
+  let merchant = (description ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim()
+  while (PAYMENT_PREFIX.test(merchant)) merchant = merchant.replace(PAYMENT_PREFIX, '').trim()
+  return merchant.toLowerCase()
+}
+
 const CATEGORY_RULES: Array<{ category: Category; re: RegExp }> = [
-  { category: '餐饮', re: /(餐|food|restaurant|餐饮|food|tea|coffee|咖啡|茶|外卖|美团饿了么|kitchen|dining)/i },
-  { category: '交通出行', re: /(uber|滴滴|taxi|地铁|公交|加油|中石化|中石油|停车|高铁|12306|出行|metro|gas|flight|机票)/i },
-  { category: '购物', re: /(商城|购物|超市|便利店|淘宝|天猫|京东|拼多多|商场|amazon|taobao|jd|shop)/i },
-  { category: '生活缴费', re: /(电费|水费|燃气|物业|话费|充值|utility|水电)/i },
-  { category: '医疗健康', re: /(医院|药房|药店|医药|挂号|clinic|pharmacy|health)/i },
+  { category: '医疗健康', re: /(医院|健康|大药房|药房|药店|药业|医药|诊所|口腔|挂号|体检|clinic|pharmacy|health|iherb)/i },
+  { category: '交通出行', re: /(uber|滴滴|taxi|地铁|公交|铁路|济铁|铁旅|高铁|12306|航空|机票|加油|中石化|中石油|停车|\betc\b|出行|metro|\bgas\b|flight|airlines?)/i },
+  { category: '旅行', re: /(携程|飞猪|酒店|旅行社|旅行服务|住宿|民宿|去哪儿|同程|travel|hotel|airbnb|trip|booking\.com|agoda)/i },
+  { category: '订阅服务', re: /(权益|会员|订阅|subscription|netflix|icloud|apple\.com|优酷|腾讯视频|爱奇艺|哔哩哔哩|spotify|openai|chatgpt|github|youtube)/i },
+  { category: '餐饮', re: /(餐|food|restaurant|\btea\b|coffee|咖啡|茶|外卖|美团|饿了么|星巴克|瑞幸|麦当劳|肯德基|汉堡王|必胜客|海底捞|kitchen|dining|starbucks|mcdonald|\bkfc\b)/i },
+  { category: '购物', re: /(商城|购物|超市|便利店|淘宝|天猫|京东|拼多多|商场|阿迪达斯|耐克|优衣库|沃尔玛|山姆|盒马|屈臣氏|amazon|taobao|\bjd\b|shop|ebay|walmart|costco|adidas|nike|uniqlo|shein|temu|aliexpress)/i },
+  { category: '生活缴费', re: /(电费|水费|燃气|物业|话费|充值|移动|联通|电信|utility|水电)/i },
   { category: '教育', re: /(学费|书店|教育|培训|course|book)/i },
   { category: '住房', re: /(房租|租金|公寓|房贷|rent)/i },
-  { category: '旅行', re: /(携程|酒店|旅行社|住宿|travel|hotel|airbnb|trip)/i },
-  { category: '订阅服务', re: /(会员|订阅|subscription|netflix|icloud|优酷|腾讯视频|爱奇艺)/i },
+  { category: '其他', re: /\bcrossmint\b/i },
 ]
 
 export function inferCategory(description: string): Category {
-  const text = description ?? ''
+  const text = normalizedMerchant(description)
   for (const rule of CATEGORY_RULES) {
     if (rule.re.test(text)) return rule.category
   }
