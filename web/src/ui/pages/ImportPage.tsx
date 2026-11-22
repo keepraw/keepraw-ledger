@@ -166,7 +166,7 @@ export function ImportPage() {
             银行 / 卡尾号 / 交易日 / 入账日 / 说明 / 交易币种 / 交易金额 / 结算币种 / 结算金额，
             格式 legacy-keepraw-export-v1），以及“统一账单”表（银行名称 / 卡号 / 交易日期 / 入账日期 /
             交易详情 / 交易币种 / 交易金额 / 入账币种 / 入账金额）。不符合任一格式的文件会被拒绝，
-            原生交易导出支持旧版 20/21/22/23/26/27 列，以及保留稳定标识指纹的新版 28 列（legacy-keepraw-ledger-export-v1）。不会尝试猜测列含义。预览阶段只读不写，确认后一次性写入。
+            原生交易导出支持不含分类的新版 27 列（保留稳定标识指纹），并兼容旧版 20/21/22/23/26/27/28 列（legacy-keepraw-ledger-export-v1）。不会尝试猜测列含义。预览阶段只读不写，确认后一次性写入。
           </p>
           <input
             ref={legacyInputRef}
@@ -246,7 +246,7 @@ export function ImportPage() {
                 legacyPreview.migrationAudit.exactCandidates > legacyPreview.stats.alreadyStored) ? (
                 <div className="notice notice-warn" data-testid="legacy-migration-review">
                   存在与账本相近但不能安全确认重复的交易，导入后会保留并标记待复核。
-                  分类、入账日、描述或原币金额差异需要对照来源核实，不会自动合并。
+                  入账日、描述或原币金额差异需要对照来源核实，不会自动合并。
                 </div>
               ) : null}
               {legacyPreview.anomalies.length > 0 ? (

@@ -11,6 +11,7 @@ import { parseTransactionId } from '../core/dedupe'
 import { minorToDecimalString } from '../core/money'
 import { TRANSACTION_TYPE_LABELS, bankName, type Transaction } from '../core/types'
 
+/** Frozen category-bearing schema for historical recovery compatibility. */
 export const EXPORT_COLUMNS = [
   { key: 'bank', header: '银行' },
   { key: 'cardLast4', header: '卡尾号' },
@@ -82,9 +83,15 @@ export function transactionToRow(transaction: Transaction): string[] {
   ]
 }
 
+export const LEDGER_EXPORT_COLUMNS = EXPORT_COLUMNS.filter(column => column.key !== 'category')
+
+export function ledgerTransactionToRow(transaction: Transaction): string[] {
+  return transactionToRow(transaction).filter((_, index) => EXPORT_COLUMNS[index]!.key !== 'category')
+}
+
 export function buildCsv(transactions: Transaction[]): string {
-  const header = EXPORT_COLUMNS.map((column) => escapeCsvCell(column.header)).join(',')
-  const body = transactions.map((transaction) => transactionToRow(transaction).map(escapeCsvCell).join(','))
+  const header = LEDGER_EXPORT_COLUMNS.map((column) => escapeCsvCell(column.header)).join(',')
+  const body = transactions.map((transaction) => ledgerTransactionToRow(transaction).map(escapeCsvCell).join(','))
   return [header, ...body].join('\r\n')
 }
 
@@ -97,10 +104,10 @@ export function downloadCsv(fileName: string, transactions: Transaction[]): void
 export async function downloadXlsx(fileName: string, transactions: Transaction[]): Promise<void> {
   const XLSX = await import('xlsx')
   const sheet = XLSX.utils.aoa_to_sheet([
-    [...EXPORT_COLUMNS.map((column) => column.header)],
-    ...transactions.map((transaction) => transactionToRow(transaction)),
+    [...LEDGER_EXPORT_COLUMNS.map((column) => column.header)],
+    ...transactions.map((transaction) => ledgerTransactionToRow(transaction)),
   ])
-  sheet['!cols'] = EXPORT_COLUMNS.map((column) => ({ wch: Math.max(10, column.header.length * 2) }))
+  sheet['!cols'] = LEDGER_EXPORT_COLUMNS.map((column) => ({ wch: Math.max(10, column.header.length * 2) }))
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, '交易明细')
   const buffer = XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer

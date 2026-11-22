@@ -24,8 +24,12 @@ export const NATIVE_LEDGER_DECISION_COLUMNS = [...NATIVE_LEDGER_DIRECTION_COLUMN
 export const NATIVE_LEDGER_BANK_COLUMNS = [...NATIVE_LEDGER_DECISION_COLUMNS, '银行双列金额来源'] as const
 export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_BANK_COLUMNS, '标识指纹'] as const
 
+export const NATIVE_LEDGER_CATEGORY_FREE_COLUMNS = NATIVE_LEDGER_CURRENT_COLUMNS.filter(name => name !== '分类')
+
 /** Exact order, exact spelling, no duplicate, extra or conflicting columns. */
-export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | 27 | 28 | null {
+export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | 27 | 28 | 'category-free' | null {
+  if (header.length === NATIVE_LEDGER_CATEGORY_FREE_COLUMNS.length &&
+    NATIVE_LEDGER_CATEGORY_FREE_COLUMNS.every((name, index) => header[index] === name)) return 'category-free'
   const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS
     : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : header.length === 23 ? NATIVE_LEDGER_DIRECTION_COLUMNS : header.length === 26 ? NATIVE_LEDGER_DECISION_COLUMNS : header.length === 27 ? NATIVE_LEDGER_BANK_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
   return header.length === schema.length && schema.every((name, index) => header[index] === name)
@@ -43,7 +47,16 @@ const positiveInteger = (value: unknown): number | null => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
-export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26 | 27 | 28) {
+export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26 | 27 | 28 | 'category-free'): {
+  rows: NormalizedLegacyRow[]; anomalies: LegacyAnomaly[]; totalRows: number
+  reviewIssues: NonNullable<LegacyPreview['reviewIssues']>
+} {
+  if (width === 'category-free') {
+    return parseNativeLedgerRows(data.map(cells => {
+      if (cells.every(blank)) return []
+      return [...cells.slice(0, 11), '未分类', ...cells.slice(11)]
+    }), 28)
+  }
   const rows: NormalizedLegacyRow[] = []
   const anomalies: LegacyAnomaly[] = []
   const reviewIssues: NonNullable<LegacyPreview['reviewIssues']> = []

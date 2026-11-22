@@ -218,3 +218,12 @@ describe('dataQuality performance', () => {
     expect(elapsed).toBeLessThan(5_000)
   }, 30_000)
 })
+
+it('ignores historical category flags in data quality and health without mutating legacy data', () => {
+  const row = tx({ flags: ['uncategorized'], category: '教育' })
+  const report = buildDataQualityReport({ transactions: [row], statements: [], imports: [] })
+  expect(report.review.flagged).toBe(0)
+  expect(report.flags.flaggedTransactions).toBe(0)
+  expect(report.flags.byFlag).not.toHaveProperty('uncategorized')
+  expect(row).toMatchObject({ category: '教育', flags: ['uncategorized'] })
+})

@@ -1,5 +1,5 @@
 import { hasAmountDirectionConflict, postingExclusionFromBankToken } from '../core/direction'
-import { inferCategory, legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import {
   normalizeHeader, normalizeLegacyBank, normalizeLegacyCard, normalizeLegacyCurrency,
@@ -80,7 +80,7 @@ export function parseUnifiedBillRows(data: unknown[][], columns: Map<string, num
     rows.push({
       bank, cardLast4, transactionDate, postingDate, description, rawDescription: description,
       transactionCurrency, transactionAmountMinor,
-      settlementCurrency, settlementAmountMinor, type, direction, postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(description), description, direction), category: inferCategory(description),
+      settlementCurrency, settlementAmountMinor, type, direction, postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(description), description, direction), category: '未分类',
       confidence: flags.includes('low_confidence') ? 0.5 : 0.9, flags,
       rawText: JSON.stringify(LEGACY_UNIFIED_BILL_COLUMNS.map(at)), sourceRow: rowNumber,
       cycleStart: null, cycleEnd: null,

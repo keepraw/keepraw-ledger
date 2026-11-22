@@ -3,7 +3,6 @@ import { assertLedgerRevision, bumpLedgerRevision, readLedgerRevision } from './
 import { buildSourceDocument, sha256Hex } from '../parsers/extract'
 import { bocParser } from '../parsers/boc'
 import { transactionFingerprint } from '../core/identity'
-import { inferCategory } from '../core/classify'
 import type { Transaction } from '../core/types'
 import type { ParsedTransaction } from '../parsers/types'
 
@@ -76,7 +75,6 @@ export async function repairBocDescriptions(): Promise<BocDescriptionRepairResul
       if (row.description === candidate.description && row.rawDescription === candidate.rawDescription) continue
       const next = { ...row, description: candidate.description, rawDescription: candidate.rawDescription }
       next.fingerprint = transactionFingerprint(next)
-      if (row.category === '未分类') next.category = inferCategory(next.description)
       updates.set(row.id, next)
     }
   }

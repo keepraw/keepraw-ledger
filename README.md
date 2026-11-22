@@ -13,7 +13,7 @@ This project is under active development and is not a replacement for your bank'
 The web application currently includes:
 
 - **Statement import:** Bank-specific PDF and EML parsers, with explicit format detection instead of an unrestricted generic fallback.
-- **Transaction ledger:** Search, filtering, categorization, manual editing, and CSV/XLSX export.
+- **Transaction ledger:** Search, filtering, review, and CSV/XLSX export.
 - **Reconciliation:** Compare parsed transactions with available bank statement summaries; flag missing or mismatched data for review.
 - **Data quality and review:** Surface low-confidence rows, possible duplicates, and incomplete information.
 - **Dashboard:** Spending summaries and trends. Unreconciled statements are excluded from the dashboard by default.
@@ -56,8 +56,11 @@ existing identity algorithm. Verified IDs and sparse occurrences survive a fresh
 browser import; same-ID financial conflicts block confirmation, and existing
 transactions and user metadata are never overwritten. Different native IDs with
 matching business fields remain separate and may require duplicate review.
-Both monetary legs, explicit type/direction, category, review status, source file
-name/hash/page and raw text are retained. The current exporter has **21 columns**;
+Both monetary legs, explicit type/direction, review status, source file
+name/hash/page and raw text are retained. Categorization is no longer offered;
+legacy categories remain inert stored metadata for JSON/ZIP and older XLSX recovery.
+Current CSV/XLSX exports omit category and include a stable identity fingerprint
+so repaired descriptions remain recoverable. The current exporter has **27 columns**;
 the older 20-column variant has no raw description. Lossy display descriptions
 that cannot validate the original fingerprint are excluded rather than given new
 IDs. Confidence, review flags, original source-row numbers, statement periods,

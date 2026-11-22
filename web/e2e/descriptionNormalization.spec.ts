@@ -34,6 +34,8 @@ for (const format of MIGRATION_FORMATS) {
     const book = XLSX.read(await readFile((await (await xlsxEvent).path())!))
     const rows = XLSX.utils.sheet_to_json<string[]>(book.Sheets['交易明细']!, { header: 1 })
     expect(rows[0]).not.toContain('商户')
+    expect(rows[0]).not.toContain('分类')
+    expect(csv.split('\r\n')[0]).not.toContain('分类')
     expect(rows[1]![4]).toBe(normalized)
     expect(rows[1]![rows[0]!.indexOf('原始描述')]).toBe(raw)
     await page.goto('/#/review')

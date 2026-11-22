@@ -19,7 +19,6 @@ import {
   patchTransactionWithStatements as persistTransactionPatch,
   recomputeStatement as persistStatementRecomputation,
   acknowledgeStatement as persistStatementAcknowledgement,
-  categorizeUncategorized as persistCategorization,
   updateTransactions,
   reviewTransactions as persistReviewTransactions,
   validateBackup,
@@ -42,7 +41,7 @@ import type { ParsedStatement } from '../parsers/types'
 import { LedgerConflictError, readLedgerRevision, subscribeLedgerChanges } from '../db/ledgerRevision'
 import { assertSourceFileSize, buildSourceDocument, MAX_IMPORT_BATCH_BYTES, sha256Hex } from '../parsers/extract'
 import { detectParser, parseDocument, UnsupportedFileError } from '../parsers/registry'
-import type { AppSettings, Category, ImportRecord, Statement, Transaction } from '../core/types'
+import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/types'
 import { triggerDownload } from '../export/tabular'
 import { downloadLedgerArchive, ledgerArchiveFileName } from '../export/ledgerArchive'
 import { readJsonBackup } from '../backup/json'
@@ -76,7 +75,6 @@ interface AppApi {
   reviewTransactions: (ids: readonly string[], decision: 'confirmed' | 'rejected') => Promise<void>
   recomputeStatement: (statementId: string) => Promise<void>
   acknowledgeStatement: (statementId: string, acknowledged: boolean) => Promise<void>
-  categorizeUncategorized: (reference?: { id: string; category: Category }) => Promise<number>
   repairBocDescriptions: () => Promise<BocDescriptionRepairResult>
   saveNote: (transactionId: string, note: string) => Promise<void>
   backup: () => Promise<void>
@@ -453,18 +451,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSnapshot(current => ({ ...current, statements: mergeStatementStates(current.statements, [statement]) }))
   }), [enqueue])
 
-  const categorizeUncategorized = useCallback((reference?: { id: string; category: Category }) => {
-    const demoRequest = settings.demoMode
-    const ownedReference = reference ? { ...reference } : undefined
-    return enqueue(async () => {
-      if (demoRequest || (await loadSettings()).demoMode) throw new Error('请先关闭演示模式，再批量修改真实交易分类。')
-      const changed = await persistCategorization(ownedReference)
-      const byId = new Map(changed.map(row => [row.id, row]))
-      setSnapshot(current => ({ ...current, transactions: current.transactions.map(row => byId.get(row.id) ?? row) }))
-      return changed.length
-    })
-  }, [enqueue, settings.demoMode])
-
   const repairBocDescriptions = useCallback(() => {
     const demoRequest = settings.demoMode
     return enqueue(async () => {
@@ -605,7 +591,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reviewTransactions,
       recomputeStatement,
       acknowledgeStatement,
-      categorizeUncategorized,
       repairBocDescriptions,
       saveNote,
       backup,
@@ -636,7 +621,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reviewTransactions,
       recomputeStatement,
       acknowledgeStatement,
-      categorizeUncategorized,
       repairBocDescriptions,
       saveNote,
       backup,

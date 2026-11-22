@@ -1,6 +1,6 @@
 import { postingExclusionFromBankToken } from '../core/direction'
 import { hasAmountDirectionConflict } from '../core/direction'
-import { inferCategory, legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import type { ReviewFlag } from '../core/types'
 import type { LegacyAnomaly, NormalizedLegacyRow } from './types'
 import {
@@ -148,7 +148,7 @@ export function parseKeeprawRows(dataRows: unknown[][], shape: KeeprawSheetShape
       type,
       direction,
       postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(rawDescription), rawDescription, direction),
-      category: inferCategory(rawDescription),
+      category: '未分类',
       confidence,
       flags,
       rawText: rawDescription,

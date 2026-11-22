@@ -40,7 +40,11 @@ export function ReviewPage() {
   const flaggedTransactions = useMemo(
     () =>
       visibleTransactions.filter(
-        (tx) => tx.reviewStatus !== 'rejected' && (tx.reviewStatus === 'pending' || tx.flags.length > 0 || hasUnresolvedDirection(tx)),
+        (tx) => {
+          const flags = tx.flags.filter(flag => flag !== 'uncategorized')
+          return tx.reviewStatus !== 'rejected' && ((tx.reviewStatus === 'pending' && (tx.flags.length === 0 || flags.length > 0)) ||
+            flags.length > 0 || hasUnresolvedDirection(tx))
+        },
       ),
     [visibleTransactions],
   )
@@ -124,7 +128,7 @@ export function ReviewPage() {
       <div className="page-head">
         <div>
           <h1>人工复核</h1>
-          <p>{state.demoMode ? '演示交易的修改与备注仅在本次会话内保留，重新生成或刷新后重置。' : '对账差额、疑似重复和未完成分类的交易都会集中在这里，复核状态会持久保存在本机。'}</p>
+          <p>{state.demoMode ? '演示交易的修改与备注仅在本次会话内保留，重新生成或刷新后重置。' : '对账差额和疑似重复的交易会集中在这里，复核状态会持久保存在本机。'}</p>
         </div>
         <div className="segmented">
           <button type="button" aria-pressed={tab === 'statements'} onClick={() => setTab('statements')}>
@@ -302,7 +306,7 @@ export function ReviewPage() {
         )
       ) : flaggedTransactions.length === 0 ? (
         <div className="card">
-          <EmptyState title="没有需要复核的交易" hint="疑似重复、低置信度或未分类的交易会出现在这里。" />
+          <EmptyState title="没有需要复核的交易" hint="疑似重复或低置信度的交易会出现在这里。" />
         </div>
       ) : (
         <div className="card">

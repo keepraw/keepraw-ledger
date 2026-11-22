@@ -53,7 +53,7 @@ export function mixedDirectionReviewBatchFixture(count = 946) {
         ...base, bank: 'boc', cardLast4: '0012', direction: 'debit',
         transactionAmountMinor: 1000, settlementAmountMinor: 1000,
         directionEvidence: { kind: 'bank', detail: '合成借记列' },
-        flags: ['uncategorized'], reviewStatus: 'pending',
+        flags: ['low_confidence'], reviewStatus: 'pending',
       })
     }
     if (kind === 1) {

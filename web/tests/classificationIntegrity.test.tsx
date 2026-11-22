@@ -36,6 +36,10 @@ describe('AUD-011 merchant text cannot redefine financial type', () => {
     expect(legacyTypeForIdentity('商户退款服务', 'debit')).toBe('purchase')
   })
   for (const format of MIGRATION_FORMATS) {
+    it(`${format.sheet}: retains the inert category default without merchant inference`, async () => {
+      const snapshot = await store(format, '支付宝-阿里健康大药房')
+      expect(snapshot.transactions[0]!.category).toBe('未分类')
+    })
     it.each(['示例优惠超市', '示例还款商店', '示例退款商店', '示例返现商店', '示例服务费商店'])(`${format.sheet}: Adapter → IndexedDB → Dashboard keeps %s as 100.00 spending`, async description => {
       const snapshot = await store(format, description)
       expect(snapshot.transactions[0]).toMatchObject({ type: 'purchase', direction: 'debit', settlementAmountMinor: 10000 })

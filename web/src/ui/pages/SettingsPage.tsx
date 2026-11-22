@@ -278,7 +278,7 @@ export function SettingsPage() {
             {backupError ? <div className="notice notice-danger" role="alert" data-testid="backup-error">{backupError}</div> : null}
             <div className="stack">
               <h3>数据工具</h3>
-              <p className="subtle">仅修复本机仍有原件的中国银行 PDF 交易描述。严格匹配原账单、日期、金额、卡号及来源行；不明确的交易跳过。交易标识、已有分类、备注与复核决定保留；变更后仍未分类的交易会自动分类。</p>
+              <p className="subtle">仅修复本机仍有原件的中国银行 PDF 交易描述。严格匹配原账单、日期、金额、卡号及来源行；不明确的交易跳过。交易标识、备注与复核决定保留。</p>
               <button className="btn btn-sm" type="button" disabled={state.demoMode || repairingDescriptions} onClick={() => void repairDescriptions()}>
                 {repairingDescriptions ? '正在修复中国银行交易描述…' : '从原始文件修复中国银行交易描述'}
               </button>

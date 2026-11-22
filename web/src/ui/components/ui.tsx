@@ -84,10 +84,11 @@ export function DirectionBadge({ direction }: { direction: Direction }) {
 }
 
 export function FlagList({ flags }: { flags: ReviewFlag[] }) {
-  if (flags.length === 0) return <span className="subtle">—</span>
+  const activeFlags = flags.filter(flag => flag !== 'uncategorized')
+  if (activeFlags.length === 0) return <span className="subtle">—</span>
   return (
     <div className="tag-list">
-      {flags.map((flag) => (
+      {activeFlags.map((flag) => (
         <Badge key={flag} tone={flag === 'suspected_duplicate' ? 'warn' : 'danger'}>
           {REVIEW_FLAG_LABELS[flag]}
         </Badge>

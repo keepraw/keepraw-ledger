@@ -159,7 +159,7 @@ async function detectLegacyAdapter(
       return { formatId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1, parsed: parseNativeLedgerRows(nativeSheet.rows.slice(1), width) }
     }
     if (header.some(cell => ['交易描述', '交易标识', '业务指纹', '重复序号', '原始描述'].includes(String(cell)))) {
-      throw new LegacyFormatError('原生交易导出表头不完整、顺序错误或存在冲突；仅接受完整 20/21/22/23/26/27/28 列 schema')
+      throw new LegacyFormatError('原生交易导出表头不完整、顺序错误或存在冲突；仅接受完整新版 27 列或旧版 20/21/22/23/26/27/28 列 schema')
     }
   }
   const pythonSheet = await readSheetData(buffer, LEGACY_STANDARD_SHEET)

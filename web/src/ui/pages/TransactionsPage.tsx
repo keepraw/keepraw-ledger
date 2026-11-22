@@ -1,11 +1,10 @@
 import { hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription, matchesTransactionDescription } from '../../core/descriptionNormalizer'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { normalizedMerchant } from '../../core/classify'
+import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { applyFilters, DEFAULT_FILTERS, type Filters } from '../../core/analytics'
 import { formatMinor } from '../../core/money'
-import { CATEGORIES, bankName, type BankId, type Category, type Transaction } from '../../core/types'
+import { bankName, type BankId, type Transaction } from '../../core/types'
 import { downloadCsv, downloadXlsx } from '../../export/tabular'
 import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, DirectionBadge } from '../components/ui'
 
@@ -67,39 +66,7 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
 }
 
 export function TransactionsPage() {
-  const { visibleTransactions, updateTransaction, categorizeUncategorized, state } = useApp()
-  const [categoryBusy, setCategoryBusy] = useState(false)
-  const categorySubmitting = useRef(false)
-  const [categoryMessage, setCategoryMessage] = useState<string | null>(null)
-  const [categoryError, setCategoryError] = useState<string | null>(null)
-  useEffect(() => { setCategoryMessage(null); setCategoryError(null) }, [state.demoMode])
-
-  const recategorize = async () => {
-    if (categorySubmitting.current) return
-    categorySubmitting.current = true; setCategoryBusy(true); setCategoryError(null); setCategoryMessage(null)
-    try {
-      const count = await categorizeUncategorized()
-      setCategoryMessage(`已自动分类 ${count} 笔交易；仅修改未分类交易，已有分类保持不变。`)
-    } catch (error) { setCategoryError(error instanceof Error ? error.message : '自动分类失败，请重试。') }
-    finally { categorySubmitting.current = false; setCategoryBusy(false) }
-  }
-
-  const changeCategory = async (tx: Transaction, category: Category) => {
-    if (categorySubmitting.current) return
-    categorySubmitting.current = true; setCategoryBusy(true); setCategoryError(null); setCategoryMessage(null)
-    try {
-      await updateTransaction({ id: tx.id, category })
-      setCategoryMessage('分类已保存。')
-      const merchant = normalizedMerchant(tx.description)
-      const count = category === '未分类' || !merchant || state.demoMode ? 0 : visibleTransactions.filter(row =>
-        row.id !== tx.id && !row.isDemo && row.category === '未分类' && normalizedMerchant(row.description) === merchant).length
-      if (count > 0 && window.confirm(`分类已保存。同时应用到其他 ${count} 笔相同商户的未分类交易？已有分类不会改变。`)) {
-        const changed = await categorizeUncategorized({ id: tx.id, category })
-        setCategoryMessage(`已将分类应用到其他 ${changed} 笔相同商户的未分类交易。`)
-      }
-    } catch (error) { setCategoryError(error instanceof Error ? error.message : '分类保存失败，请重试。') }
-    finally { categorySubmitting.current = false; setCategoryBusy(false) }
-  }
+  const { visibleTransactions, state } = useApp()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState('')
   const [directionFilter, setDirectionFilter] = useState<string>('')
@@ -147,9 +114,6 @@ export function TransactionsPage() {
           </p>
         </div>
         <div className="row">
-          <button className="btn" type="button" disabled={categoryBusy || state.demoMode} onClick={() => void recategorize()}>
-            重新自动分类
-          </button>
           <button className="btn" type="button" data-testid="export-csv" onClick={() => downloadCsv('交易明细.csv', rows)}>
             导出 CSV
           </button>
@@ -159,8 +123,6 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {categoryMessage ? <div className="notice" role="status">{categoryMessage}</div> : null}
-      {categoryError ? <div className="notice notice-danger" role="alert">{categoryError}</div> : null}
       <div className="card">
         <div className="card-pad row">
           <input
@@ -251,7 +213,6 @@ export function TransactionsPage() {
                   <th className="sortable" onClick={() => toggleSort('direction')}>
                     方向{arrow('direction')}
                   </th>
-                  <th>分类</th>
                   <th>复核</th>
                 </tr>
               </thead>
@@ -280,21 +241,6 @@ export function TransactionsPage() {
                     </td>
                     <td className="nowrap">
                       {hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank' ? '待选择' : <DirectionBadge direction={effectiveDirection(tx)} />}
-                    </td>
-                    <td>
-                      <select
-                        className="select"
-                        value={tx.category}
-                        aria-label={`${transactionDisplayDescription(tx)} 分类`}
-                        disabled={categoryBusy}
-                        onChange={(event) => void changeCategory(tx, event.target.value as Category)}
-                      >
-                        {CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
                     </td>
                     <td className="nowrap">
                       <ReviewStatusBadge status={tx.reviewStatus} />

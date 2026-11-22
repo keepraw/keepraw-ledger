@@ -12,7 +12,7 @@ import { buildSyntheticBocPdf } from './fixtures/bocPdf'
 import type { SourceDocument } from '../src/parsers/types'
 import type { Transaction } from '../src/core/types'
 import * as XLSX from 'xlsx'
-import { EXPORT_COLUMNS, transactionToRow } from '../src/export/tabular'
+import { LEDGER_EXPORT_COLUMNS, ledgerTransactionToRow } from '../src/export/tabular'
 import { previewLegacyWorkbook } from '../src/importers/legacyImport'
 
 vi.mock('../src/parsers/extract', async importOriginal => ({
@@ -64,7 +64,7 @@ async function seed(category: Transaction['category'] = '未分类') {
   return { target, result, parsed, fileHash }
 }
 
-it.each<Transaction['category']>(['未分类', '旅行'])('repairs only descriptions/fingerprint and uncategorized category (%s), preserves IDs/notes/review and is idempotent', async category => {
+it.each<Transaction['category']>(['未分类', '旅行'])('repairs only descriptions/fingerprint and preserves inert historical category (%s), preserves IDs/notes/review and is idempotent', async category => {
   const { target, fileHash } = await seed(category)
   const before = await exportDataBackup()
   const revision = await readLedgerRevision()
@@ -72,7 +72,7 @@ it.each<Transaction['category']>(['未分类', '旅行'])('repairs only descript
   expect(buildSourceDocument).toHaveBeenCalledWith({ fileName: 'synthetic-boc.pdf', fileHash, buffer: bytes })
   const repaired = await db.transactions.get(target.id)
   expect(repaired).toEqual({ ...target, description: repairedDescription, rawDescription: repairedDescription,
-    fingerprint: transactionFingerprint({ ...target, description: repairedDescription }), category: category === '未分类' ? '医疗健康' : category })
+    fingerprint: transactionFingerprint({ ...target, description: repairedDescription }), category })
   const after = await exportDataBackup()
   if (before.version !== 2 || after.version !== 2) throw new Error('expected v2 backup')
   expect(after.reviewNotes).toEqual(before.reviewNotes)
@@ -107,7 +107,7 @@ it('recovers repaired descriptions and stable IDs from exported native XLSX', as
   await repairBocDescriptions()
   const repaired = (await db.transactions.get(target.id))!
   const book = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([EXPORT_COLUMNS.map(column => column.header), transactionToRow(repaired)]), '交易明细')
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([LEDGER_EXPORT_COLUMNS.map(column => column.header), ledgerTransactionToRow(repaired)]), '交易明细')
   const preview = await previewLegacyWorkbook(XLSX.write(book, { type: 'array', bookType: 'xlsx' }),
     { fileName: 'synthetic-repaired.xlsx', fileHash: 'synthetic-repaired', fileSize: 1 }, { transactions: [], statements: [], imports: [] })
   expect(preview.anomalies).toEqual([])
