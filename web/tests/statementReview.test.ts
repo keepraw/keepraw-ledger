@@ -99,3 +99,17 @@ it('rejects missing statements and genuine mismatches without writes; stale ackn
   expect(next.reconciliationAcknowledged).toBe(false)
   expect(statementNeedsReview(next)).toBe(true)
 })
+
+it.each([false, true])('preserves acknowledgement on another same-period import unless it introduces a mismatch (%s)', async mismatch => {
+  const first = fixture()
+  await persistImportResults([first])
+  await acknowledgeStatement(first.statement!.id, true)
+  const second = ingestSynthetic(['消费 合成另一来源'], 'synthetic-second-file', await readSnapshot())
+  expect(second.statement!.reconciliationAcknowledged).toBeUndefined()
+  if (mismatch) second.statement!.summary = { ...second.statement!.summary, previousBalanceMinor: 0, currentBalanceMinor: 1 }
+  await persistImportResults([second])
+  const stored = (await db.statements.get(first.statement!.id))!
+  expect(stored.reconciliationAcknowledged).toBe(!mismatch)
+  expect(statementNeedsReview(stored)).toBe(mismatch)
+  if (mismatch) expect(stored.reconciliation.status).toBe('mismatch')
+})

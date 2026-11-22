@@ -118,7 +118,9 @@ export async function persistImportResults(results: IngestResult[], expectedRevi
         }
       }
       // A partial later source cannot erase an already stored bank basis.
-      await db.statements.put(current && existingBankTotal && !incomingBankTotal ? current : result.statement)
+      const next = current && existingBankTotal && !incomingBankTotal ? current : result.statement
+      await db.statements.put(current?.reconciliationAcknowledged === undefined ? next
+        : { ...next, reconciliationAcknowledged: current.reconciliationAcknowledged })
       // Existing rows may have been edited since parsing. Never write them back.
       const insertedIds = new Set(result.inserted.map((tx) => tx.id))
       await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)).map(withoutLegacyMerchant))
