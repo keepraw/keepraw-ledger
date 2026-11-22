@@ -73,6 +73,17 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+it('keeps the exclusion notice for acknowledged but untrusted statements, independent of queue count', () => {
+  const { first, statement } = makeBase()
+  setLedger([first], [{ ...statement, id: first.statementId, status: 'needs_review', reconciliationAcknowledged: true }])
+  render(<DashboardPage />)
+  expect(screen.getByText('有 1 份账单未通过对账，暂未计入以上统计')).toBeInTheDocument()
+  expect(screen.getByText('借记总额').closest('.stat')).toHaveTextContent('¥0.00')
+  fireEvent.click(screen.getByRole('checkbox', { name: '包含待复核账单' }))
+  expect(screen.queryByText('有 1 份账单未通过对账，暂未计入以上统计')).not.toBeInTheDocument()
+  expect(screen.getByText('借记总额').closest('.stat')).toHaveTextContent('¥128.80')
+})
+
 describe('Dashboard monthly trend presentation', () => {
   it.each([6, 12, 24, 60])('shows the latest window and exposes every year for %i recorded months', (count) => {
     const { first } = makeBase()
