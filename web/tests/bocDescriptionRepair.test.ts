@@ -11,6 +11,9 @@ import { transactionId } from '../src/core/dedupe'
 import { buildSyntheticBocPdf } from './fixtures/bocPdf'
 import type { SourceDocument } from '../src/parsers/types'
 import type { Transaction } from '../src/core/types'
+import * as XLSX from 'xlsx'
+import { EXPORT_COLUMNS, transactionToRow } from '../src/export/tabular'
+import { previewLegacyWorkbook } from '../src/importers/legacyImport'
 
 vi.mock('../src/parsers/extract', async importOriginal => ({
   ...await importOriginal<typeof import('../src/parsers/extract')>(), buildSourceDocument: vi.fn(),
@@ -97,6 +100,19 @@ it('keeps same-file SHA skipping and exact cross-file deduplication working with
   const otherFile = ingestParsedStatement(parsed, { fileName: 'another.pdf', fileHash: 'another-hash', fileSize: 3, sourceType: 'pdf' }, snapshot)
   expect(otherFile.inserted).toHaveLength(0)
   expect(otherFile.transactions.some(row => row.id === target.id)).toBe(true)
+})
+
+it('recovers repaired descriptions and stable IDs from exported native XLSX', async () => {
+  const { target } = await seed()
+  await repairBocDescriptions()
+  const repaired = (await db.transactions.get(target.id))!
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([EXPORT_COLUMNS.map(column => column.header), transactionToRow(repaired)]), '交易明细')
+  const preview = await previewLegacyWorkbook(XLSX.write(book, { type: 'array', bookType: 'xlsx' }),
+    { fileName: 'synthetic-repaired.xlsx', fileHash: 'synthetic-repaired', fileSize: 1 }, { transactions: [], statements: [], imports: [] })
+  expect(preview.anomalies).toEqual([])
+  expect(preview.rows).toHaveLength(1)
+  expect(preview.rows[0]).toMatchObject({ id: target.id, fingerprint: repaired.fingerprint, description: repairedDescription })
 })
 
 it('skips ambiguous stored and parsed matches instead of trusting potentially reversed row indexes', async () => {

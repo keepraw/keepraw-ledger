@@ -1,4 +1,5 @@
 import { transactionDisplayDescription } from '../core/descriptionNormalizer'
+import { parseTransactionId } from '../core/dedupe'
 /**
  * CSV export.
  *
@@ -38,6 +39,7 @@ export const EXPORT_COLUMNS = [
   { key: 'directionResolution', header: '人工方向决定' },
   { key: 'flags', header: '完整复核标记' },
   { key: 'bankColumnAmounts', header: '银行双列金额来源' },
+  { key: 'identityFingerprint', header: '标识指纹' },
 ] as const
 
 export function escapeCsvCell(value: string): string {
@@ -76,6 +78,7 @@ export function transactionToRow(transaction: Transaction): string[] {
     transaction.directionResolution ? JSON.stringify(transaction.directionResolution) : '',
     JSON.stringify(transaction.flags),
     transaction.bankColumnAmounts ? JSON.stringify(transaction.bankColumnAmounts) : '',
+    parseTransactionId(transaction.id).fingerprint,
   ]
 }
 

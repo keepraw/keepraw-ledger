@@ -21,14 +21,15 @@ export const NATIVE_LEDGER_DIRECTION_COLUMNS = [...NATIVE_LEDGER_POSTING_COLUMNS
 
 export const NATIVE_LEDGER_DECISION_COLUMNS = [...NATIVE_LEDGER_DIRECTION_COLUMNS, '银行方向依据', '人工方向决定', '完整复核标记'] as const
 
-export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_DECISION_COLUMNS, '银行双列金额来源'] as const
+export const NATIVE_LEDGER_BANK_COLUMNS = [...NATIVE_LEDGER_DECISION_COLUMNS, '银行双列金额来源'] as const
+export const NATIVE_LEDGER_CURRENT_COLUMNS = [...NATIVE_LEDGER_BANK_COLUMNS, '标识指纹'] as const
 
 /** Exact order, exact spelling, no duplicate, extra or conflicting columns. */
-export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | 27 | null {
+export function detectNativeLedgerShape(header: unknown[]): 20 | 21 | 22 | 23 | 26 | 27 | 28 | null {
   const schema = header.length === 20 ? NATIVE_LEDGER_COLUMNS : header.length === 21 ? NATIVE_LEDGER_RAW_COLUMNS
-    : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : header.length === 23 ? NATIVE_LEDGER_DIRECTION_COLUMNS : header.length === 26 ? NATIVE_LEDGER_DECISION_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
+    : header.length === 22 ? NATIVE_LEDGER_POSTING_COLUMNS : header.length === 23 ? NATIVE_LEDGER_DIRECTION_COLUMNS : header.length === 26 ? NATIVE_LEDGER_DECISION_COLUMNS : header.length === 27 ? NATIVE_LEDGER_BANK_COLUMNS : NATIVE_LEDGER_CURRENT_COLUMNS
   return header.length === schema.length && schema.every((name, index) => header[index] === name)
-    ? header.length as 20 | 21 | 22 | 23 | 26 | 27 : null
+    ? header.length as 20 | 21 | 22 | 23 | 26 | 27 | 28 : null
 }
 
 const bankEntries = Object.entries(BANKS)
@@ -42,7 +43,7 @@ const positiveInteger = (value: unknown): number | null => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
-export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26 | 27) {
+export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 23 | 26 | 27 | 28) {
   const rows: NormalizedLegacyRow[] = []
   const anomalies: LegacyAnomaly[] = []
   const reviewIssues: NonNullable<LegacyPreview['reviewIssues']> = []
@@ -110,8 +111,9 @@ export function parseNativeLedgerRows(data: unknown[][], width: 20 | 21 | 22 | 2
       transactionAmountMinor, settlementCurrency, settlementAmountMinor, type, direction }
     const description = candidates.find(description => transactionFingerprint({ ...financial, description }) === fingerprint &&
       (width === 20 || transactionDisplayDescription({ bank, description, rawDescription }) === displayed))
-    if (!/^[a-f0-9]{16}$/.test(fingerprint) || occurrence === null ||
-      id !== transactionId(fingerprint, occurrence) || description === undefined) {
+    const identityFingerprint = width >= 28 ? text(cells[27]) : fingerprint
+    if (!/^[a-f0-9]{16}$/.test(fingerprint) || !/^[a-f0-9]{16}$/.test(identityFingerprint) || occurrence === null ||
+      id !== transactionId(identityFingerprint, occurrence) || description === undefined) {
       fail('identity_conflict', '交易标识、业务指纹、重复序号或金融字段无法互相验证；显示描述可能已丢失身份文本'); continue
     }
     let postingExclusion: PostingExclusion | null | undefined

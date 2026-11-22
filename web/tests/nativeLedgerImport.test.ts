@@ -19,13 +19,14 @@ const preview = (rows?: unknown[][], headers?: string[]) => previewLegacyWorkboo
 beforeEach(async () => { await db.delete(); await db.open() })
 
 describe('native Keepraw-Ledger XLSX round trip', () => {
-  it('freezes historical schemas and the current 27-column exporter', async () => {
+  it('freezes historical schemas and the current 28-column exporter', async () => {
     expect(NATIVE_HEADERS).toHaveLength(20)
-    expect(EXPORT_COLUMNS.map(column => column.header)).toEqual([...NATIVE_HEADERS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '原始描述', '入账排除依据', '方向复核标记', '银行方向依据', '人工方向决定', '完整复核标记', '银行双列金额来源'])
+    expect(EXPORT_COLUMNS.map(column => column.header)).toEqual([...NATIVE_HEADERS.map(name => name === '交易类型' ? '历史类型（仅身份兼容）' : name), '原始描述', '入账排除依据', '方向复核标记', '银行方向依据', '人工方向决定', '完整复核标记', '银行双列金额来源', '标识指纹'])
     expect(detectNativeLedgerShape(EXPORT_COLUMNS.slice(0, 22).map(column => column.header))).toBe(22)
     expect(detectNativeLedgerShape(EXPORT_COLUMNS.slice(0, 23).map(column => column.header))).toBe(23)
     expect(detectNativeLedgerShape(EXPORT_COLUMNS.slice(0, 26).map(column => column.header))).toBe(26)
-    expect(detectNativeLedgerShape(EXPORT_COLUMNS.map(column => column.header))).toBe(27)
+    expect(detectNativeLedgerShape(EXPORT_COLUMNS.slice(0, 27).map(column => column.header))).toBe(27)
+    expect(detectNativeLedgerShape(EXPORT_COLUMNS.map(column => column.header))).toBe(28)
     expect(detectNativeLedgerShape(NATIVE_HEADERS)).toBe(20)
     expect(detectNativeLedgerShape([...NATIVE_HEADERS, '原始描述'])).toBe(21)
     expect((await preview()).stats).toMatchObject({ formatId: LEGACY_KEEPRAW_LEDGER_EXPORT_V1, totalRows: 2,
@@ -395,4 +396,3 @@ describe('native Keepraw-Ledger XLSX round trip', () => {
     expect(retainedGrowth).toBeLessThan(1024 * 1024 * 1024)
   }, 60_000)
 })
-
