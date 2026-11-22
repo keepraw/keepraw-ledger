@@ -209,6 +209,7 @@ test('production JSON/ZIP downloads and fresh-context restores preserve rows, no
       const actual = JSON.parse(await readFile((await (await event).path())!, 'utf8'))
       for (const key of ['transactions', 'statements', 'imports', 'reviewNotes'] as const) expect(actual[key]).toEqual(backup.json[key])
       if (backup.name.endsWith('.zip')) {
+        await restored.getByRole('button', { name: /^查看原始文件/ }).click()
         const event = restored.waitForEvent('download')
         await restored.getByRole('button', { name: '下载原始文件' }).click()
         expect(await readFile((await (await event).path())!, 'utf8')).toBe(source)

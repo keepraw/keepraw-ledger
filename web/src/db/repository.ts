@@ -14,7 +14,7 @@ import { canAcknowledgeStatement, deriveStatementState, normalizeHistoricalState
 import { getStatementExpectedTotal } from '../core/reconciliation'
 import { MAX_ENTRY_BYTES } from '../backup/zipSafety'
 import { inferCategory, normalizedMerchant } from '../core/classify'
-import { CATEGORIES, type Category } from '../core/types'
+import { CATEGORIES, type BankId, type Category } from '../core/types'
 export { validateBackup } from '../backup/validation'
 
 /** Caller holds the statements + transactions write transaction. Indexed by statementId. */
@@ -603,7 +603,7 @@ export async function setArchiveFileExternal(fileHash: string, external: boolean
 }
 
 export async function listArchiveFiles(): Promise<{ revision: LedgerRevision; files: Array<{
-  fileHash: string; fileName: string; size: number; external: boolean
+  fileHash: string; fileName: string; bank: BankId; size: number; external: boolean; missing: boolean
 }> }> {
   return db.transaction('r', db.imports, db.attachments, db.settings, async () => {
     const revision = await readLedgerRevision()
@@ -613,8 +613,9 @@ export async function listArchiveFiles(): Promise<{ revision: LedgerRevision; fi
       if (record.isDemo || hashes.has(record.fileHash)) continue
       hashes.add(record.fileHash)
       const row = await db.attachments.get(record.fileHash)
-      if (row) files.push({ fileHash: row.fileHash, fileName: row.fileName, size: row.data.byteLength,
-        external: await isArchiveFileExternal(row.fileHash) })
+      files.push({ fileHash: record.fileHash, fileName: row?.fileName ?? record.fileName, bank: record.bank,
+        size: row?.data.byteLength ?? record.fileSize, missing: !row,
+        external: await isArchiveFileExternal(record.fileHash) })
     }
     return { revision, files }
   })

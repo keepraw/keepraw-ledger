@@ -5,6 +5,7 @@ import { triggerDownload } from '../../export/tabular'
 import { getDemoSnapshot } from '../../demo/demoStore'
 import { parserCatalog } from '../../parsers/registry'
 import { Badge, DemoBadge } from '../components/ui'
+import { RawFileManagement } from '../components/RawFileManagement'
 
 export function SettingsPage() {
   const { state, setSettings, backup, backupData, backupFull, exportLedgerXlsx, restore, archiveStatus, clearData, loadDemoData } = useApp()
@@ -264,22 +265,7 @@ export function SettingsPage() {
               />
             </div>
             {backupError ? <div className="notice notice-danger" role="alert" data-testid="backup-error">{backupError}</div> : null}
-            {archiveFiles && archiveFiles.files.length > 0 ? (
-              <div className="stack">
-                <h3>原始文件管理</h3>
-                <p className="subtle">ZIP 单文件上限 64 MiB、总量上限 256 MiB。超限时可先下载原件，再由你选择外部保存。外部保存不会删除本机原件或影响 JSON 备份；ZIP 清单会标记 external，恢复原件需要另外保存的文件。</p>
-                {archiveFiles.files.map(file => (
-                  <div className="stack" key={file.fileHash} data-testid="archive-file">
-                    <div>{file.fileName}（{(file.size / 1024 / 1024).toFixed(2)} MiB）</div>
-                    <div>{file.external ? '外部保存，不放入 ZIP' : '包含在 ZIP'}</div>
-                    <div className="row">
-                      <button className="btn btn-sm" type="button" onClick={() => void downloadOriginal(file.fileHash)}>下载原始文件</button>
-                      <button className="btn btn-sm" type="button" onClick={() => void changeExternal(file.fileHash, !file.external)}>{file.external ? '恢复包含在 ZIP' : '设为外部保存'}</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            {archiveFiles ? <RawFileManagement files={archiveFiles.files} downloadOriginal={downloadOriginal} changeExternal={changeExternal} /> : null}
             {usage ? (
               <p className="subtle">
                 本地存储占用约 {(usage.usage / 1024 / 1024).toFixed(2)} MB / 配额 {(usage.quota / 1024 / 1024).toFixed(0)} MB
