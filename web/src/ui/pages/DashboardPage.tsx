@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { statementNeedsReview } from '../../core/statementState'
 import { useApp } from '../../app/AppStore'
 import { DEFAULT_FILTERS, applyFilters, filterByStatementTrust, groupBy, groupByBank, monthlyTrend, summarize, untrustedAmount, type Filters } from '../../core/analytics'
 import { bankName, type BankId } from '../../core/types'
@@ -59,7 +60,7 @@ export function DashboardPage() {
     filters.from && filters.to && filters.from.slice(0, 7) === filters.to.slice(0, 7) ? filters.from.slice(0, 7) : ''
 
   const hasData = visibleTransactions.length > 0
-  const pendingStatements = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
+  const pendingStatements = visibleStatements.filter(statementNeedsReview).length
 
   const displayedCards = showAllCards ? byCard : byCard.slice(0, 10)
 

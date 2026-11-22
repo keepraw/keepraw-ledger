@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { statementNeedsReview } from '../core/statementState'
 import { useApp } from '../app/AppStore'
 import { pageTitle, useHashPage, type Page } from './router'
 import { Badge, DemoBadge } from './components/ui'
@@ -40,7 +41,7 @@ export function AppShell() {
     return () => media.removeEventListener('change', apply)
   }, [state.settings.theme])
 
-  const pending = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
+  const pending = visibleStatements.filter(statementNeedsReview).length
 
   return (
     <div className="app">

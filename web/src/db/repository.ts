@@ -10,7 +10,7 @@ import { assertLedgerRevision, bumpLedgerRevision, LedgerConflictError, readLedg
 const DEMO_PURGE_KEY = 'migration:memory-only-demo'
 import { validateBackup } from '../backup/validation'
 import { createJsonBlob } from '../backup/json'
-import { deriveStatementState } from '../core/statementState'
+import { canAcknowledgeStatement, deriveStatementState, normalizeHistoricalStatements } from '../core/statementState'
 import { getStatementExpectedTotal } from '../core/reconciliation'
 import { MAX_ENTRY_BYTES } from '../backup/zipSafety'
 export { validateBackup } from '../backup/validation'
@@ -35,6 +35,20 @@ export async function recomputeStatement(statementId: string): Promise<Statement
     const statement = (await rebuildStatementStates([statementId]))[0]
     if (statement) await bumpLedgerRevision()
     return statement
+  })
+}
+
+export async function acknowledgeStatement(statementId: string, acknowledged: boolean): Promise<Statement> {
+  return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
+    const current = await db.statements.get(statementId)
+    if (!current) throw new Error('账单不存在，请刷新后重试。')
+    const rows = await db.transactions.where('statementId').equals(statementId).toArray()
+    const statement = deriveStatementState(current, rows)
+    if (acknowledged && !canAcknowledgeStatement(statement)) throw new Error('仅缺少汇总信息且不存在对账差额的账单可确认无需对账。')
+    const next = { ...statement, reconciliationAcknowledged: acknowledged }
+    await db.statements.put(next)
+    await bumpLedgerRevision()
+    return next
   })
 }
 
@@ -285,7 +299,8 @@ export async function importBackup(payload: BackupPayload): Promise<void> {
   if (!validateBackup(payload)) throw new Error('备份包含无效记录，拒绝恢复')
   // Normalize old V1/V2 JSON and ZIP rows immutably before any writes.
   // This also removes PR #48 flags without relying on a database upgrade.
-  payload = { ...payload, transactions: payload.transactions.map(normalizeRestoredTransaction) }
+  payload = { ...payload, transactions: payload.transactions.map(normalizeRestoredTransaction),
+    statements: normalizeHistoricalStatements(payload.statements, payload.transactions, payload.imports) }
   // V1 restores never touch reviewNotes: existing local notes stay unchanged.
   // V2 restores merge notes in the same atomic transaction as financial rows.
   const incomingNotes: ReviewNotePayload[] = payload.version === 2 ? payload.reviewNotes : []

@@ -1,4 +1,5 @@
 import { REVIEW_FLAGS } from './types'
+import { statementNeedsReview } from './statementState'
 import type {
   ImportRecord,
   ReconciliationStatus,
@@ -177,7 +178,7 @@ export function buildDataQualityReport(input: DataQualityInput): DataQualityRepo
     if (byStatus[statement.status] !== undefined) byStatus[statement.status] += 1
     const reconciliationStatus = statement.reconciliation.status
     if (byReconciliation[reconciliationStatus] !== undefined) byReconciliation[reconciliationStatus] += 1
-    if (statement.status !== 'reconciled' && statement.status !== 'imported') needsReviewStatements += 1
+    if (statementNeedsReview(statement)) needsReviewStatements += 1
   }
 
   const importsBySourceType: Record<string, number> = {}

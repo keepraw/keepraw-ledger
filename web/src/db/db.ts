@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import { repairDirectionFirst } from './directionFirstRepair'
+import { repairStatementReview } from './statementReviewRepair'
 import { repairNativeLedgerConfidence } from './nativeConfidenceRepair'
 import type { AppSettings, ImportRecord, Statement, Transaction } from '../core/types'
 
@@ -95,6 +96,7 @@ export class BillDatabase extends Dexie {
     // transaction. An abort rolls back both row edits and the version bump.
     this.version(5).stores({}).upgrade(repairNativeLedgerConfidence)
     this.version(6).stores({}).upgrade(repairDirectionFirst)
+    this.version(7).stores({}).upgrade(repairStatementReview)
   }
 }
 

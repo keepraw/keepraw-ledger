@@ -236,6 +236,7 @@ export interface ReconciliationResult {
 export type StatementStatus = 'reconciled' | 'needs_review' | 'failed' | 'imported'
 
 export interface Statement {
+  reconciliationAcknowledged?: boolean
   id: string
   /** bank + card + cycle: identifies the billing period of one card. */
   statementKey: string
