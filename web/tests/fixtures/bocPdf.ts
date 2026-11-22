@@ -43,7 +43,7 @@ function page(number: number, items: ItemSpec[]): PdfPage {
   }
 }
 
-export function buildSyntheticBocPdf(): PdfDocument {
+export function buildSyntheticBocPdf(coordinates: 'top-down' | 'bottom-up' = 'bottom-up'): PdfDocument {
   const summaryPage = page(1, [
     item('中国银行信用卡账单(2026年09月)', 181, 742, 232),
     item('BOC Credit Card Billing Statement(2026-09)', 140, 719, 314),
@@ -148,7 +148,13 @@ export function buildSyntheticBocPdf(): PdfDocument {
     item('600.00', COL.deposit + 4, 503, 30),
   ])
 
-  return { numPages: 2, pages: [summaryPage, detailPage] }
+  const pages = [summaryPage, detailPage]
+  if (coordinates === 'top-down') {
+    for (const page of pages) {
+      for (const item of page.items) item.y = page.height - item.y
+    }
+  }
+  return { numPages: 2, pages }
 }
 
 /** Expected figures for the synthetic statement above. */

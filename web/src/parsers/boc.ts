@@ -433,7 +433,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
       })
     }
 
-    transactionRows.sort((a, b) => b.row.y - a.row.y).forEach((entry, index) => {
+    transactionRows.sort((a, b) => (a.row.y - b.row.y) * direction).forEach((entry, index) => {
       const built = buildTransaction(entry, fragments, {
         depositCenter,
         expenditureCenter,
@@ -441,6 +441,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
         fallbackCardLast4,
         sourceRow: index,
         currency: entry.currency,
+        readingDirection: direction,
       })
       if (built) result.push(built)
     })
@@ -449,6 +450,7 @@ function parseTransactions(doc: SourceDocument, fallbackCardLast4: string): Pars
 }
 
 interface ColumnConfig {
+  readingDirection: number
   currency: string
   depositCenter: number
   expenditureCenter: number
@@ -518,7 +520,7 @@ function buildTransaction(entry: RowRef, fragments: Fragment[], config: ColumnCo
     )
     .map((fragment) => ({ y: fragment.y, text: fragment.text }))
   parts.push(...nearby)
-  parts.sort((a, b) => b.y - a.y)
+  parts.sort((a, b) => (a.y - b.y) * config.readingDirection)
 
   const rawDescription = parts
     .map((part) => part.text.replace(/\s+/g, ' ').trim())
