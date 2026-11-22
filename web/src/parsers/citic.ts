@@ -7,7 +7,7 @@ import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/t
 import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'citic_eml'
-const PARSER_VERSION = '1.0.0'
+const PARSER_VERSION = '1.0.1'
 
 /**
  * China CITIC Bank e-mailed HTML statement (动卡空间 / ecitic template).
@@ -20,9 +20,8 @@ const PARSER_VERSION = '1.0.0'
  *
  * Note on the bank's own subtotals: 中信 nets refunds and cashbacks into
  * 本期新增金额 (New Charge) instead of counting them toward 上期已还款额
- * (Payments). The parser reports the bank-stated lines verbatim; a cycle
- * containing refunds therefore routes to manual review under the shared
- * detail checks instead of being silently redefined. The balance equation
+ * (Payments). The parser reports the bank-stated lines verbatim and reconciles
+ * transaction details by net amount. The balance equation
  * (上期应还款额 − 上期已还款额 + 本期新增金额 = 账户账单金额) always holds.
  */
 
@@ -163,6 +162,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
   const summary = emptySummary()
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
+  summary.detailBasis = 'net'
 
   // --- 总账信息: 本期应还款总额 / 本期最低还款额 (same-row label + amount) ---
   for (const table of doc.tables) {

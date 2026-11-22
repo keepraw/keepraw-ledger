@@ -9,7 +9,7 @@ import {
 import { detectParser } from '../src/parsers/registry'
 import { extractTables, extractText, sanitizeHtml } from '../src/parsers/html'
 import type { SourceDocument } from '../src/parsers/types'
-import { SYNTHETIC_CITIC, SYNTHETIC_CITIC_HTML } from './fixtures/citicEml'
+import { SYNTHETIC_CITIC, SYNTHETIC_CITIC_HTML, SYNTHETIC_CITIC_NET_HTML } from './fixtures/citicEml'
 import { SYNTHETIC_BOCOM_HTML } from './fixtures/bocomEml'
 import { ingestParsedStatement, type ExistingSnapshot } from '../src/core/ingest'
 
@@ -90,6 +90,7 @@ describe('CITIC EML parser', () => {
     expect(summary.newDebitMinor).toBe(SYNTHETIC_CITIC.newDebitMinor)
     expect(summary.currentBalanceMinor).toBe(SYNTHETIC_CITIC.currentBalanceMinor)
     expect(summary.minimumPaymentMinor).toBe(SYNTHETIC_CITIC.minimumPaymentMinor)
+    expect(summary.detailBasis).toBe('net')
   })
 
   it('balances the statement equation', () => {
@@ -128,6 +129,29 @@ describe('CITIC EML parser', () => {
       .filter((tx) => tx.direction === 'debit')
       .reduce((sum, tx) => sum + tx.settlementAmountMinor, 0)
     expect(counted).toBe(SYNTHETIC_CITIC.newDebitMinor)
+  })
+
+  it('reconciles gross refund, cashback, and 延期还款 rows against the bank net summary', () => {
+    const parsed = citicParser.parse(makeDoc(SYNTHETIC_CITIC_NET_HTML))
+    const result = ingestParsedStatement(parsed,
+      { fileName: 'synthetic-citic-net.eml', fileHash: 'citic-net', fileSize: 1, sourceType: 'eml' }, EMPTY)
+    expect(parsed.transactions.some((tx) => tx.direction === 'credit' && tx.rawDescription.includes('退款'))).toBe(true)
+    expect(parsed.transactions.some((tx) => tx.direction === 'credit' && tx.rawDescription.includes('返现'))).toBe(true)
+    expect(parsed.transactions.filter((tx) => tx.rawDescription === '延期还款').map((tx) => tx.direction).sort())
+      .toEqual(['credit', 'debit'])
+    expect(result.statement!.reconciliation.status).toBe('passed')
+    expect(result.statement!.reconciliation.checks.map((check) => check.id)).toContain('net_detail')
+    expect(result.statement!.reconciliation.checks.map((check) => check.id)).not.toContain('debit_detail')
+    expect(result.statement!.reconciliation.checks.map((check) => check.id)).not.toContain('credit_detail')
+
+    const withoutDebit = SYNTHETIC_CITIC_NET_HTML.replace(
+      '<tr><td>20260813</td><td>20260813</td><td>6543</td><td></td><td>网上消费 示例商城</td><td>CNY 20000.00</td><td>CNY 20000.00</td></tr>',
+      '',
+    )
+    const missing = ingestParsedStatement(citicParser.parse(makeDoc(withoutDebit)),
+      { fileName: 'synthetic-citic-net-missing.eml', fileHash: 'citic-net-missing', fileSize: 1, sourceType: 'eml' }, EMPTY)
+    expect(missing.statement!.reconciliation.status).toBe('mismatch')
+    expect(missing.statement!.reconciliation.checks.find((check) => check.id === 'net_detail')?.status).toBe('mismatch')
   })
 
   it('keeps identical same-day same-merchant rows separate', () => {

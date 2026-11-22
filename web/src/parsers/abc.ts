@@ -2,12 +2,12 @@ import { postingExclusionFromBankToken } from '../core/direction'
 import { cleanSourceDescription } from '../core/sourceDescription'
 import { addDays, isIsoDate, parseDateInput, type IsoDate } from '../core/dates'
 import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
-import { parseAmountToMinor } from '../core/money'
+import { normalizeCurrencyCode, parseAmountToMinor } from '../core/money'
 import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/types'
 import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'abc_eml'
-const PARSER_VERSION = '1.0.0'
+const PARSER_VERSION = '1.0.1'
 
 /**
  * Agricultural Bank of China 金穗信用卡 e-mailed HTML statement.
@@ -142,17 +142,35 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
 
+  const equationHeaderIndex = doc.tables.findIndex((table) =>
+    table.rows.some(
+      (row) =>
+        row.filter((cell) => /本期应还金额|上期账单\s*应还金额|本期账单金额|本期还款/.test(cell)).length >= 3,
+    ),
+  )
+  const headerTable = equationHeaderIndex === -1 ? null : doc.tables[equationHeaderIndex]!
+  const headerRow = headerTable?.rows.find(
+    (row) => row.filter((cell) => /本期应还金额|上期账单\s*应还金额|本期账单金额|本期还款/.test(cell)).length >= 3,
+  ) ?? null
+  const valueTable = equationHeaderIndex === -1 ? null : doc.tables.slice(equationHeaderIndex + 1).find((table) =>
+    table.rows.some((row) => row.filter((cell) => /-?\d+\.\d{2}/.test(cell)).length >= 3),
+  ) ?? null
+  const valueRow = valueTable?.rows.find(
+    (row) => row.filter((cell) => /-?\d+\.\d{2}/.test(cell)).length >= 3,
+  ) ?? null
+  const accountCurrency = valueRow ? abcEquationCurrency(valueRow[0] ?? '') : 'CNY'
+
   for (const table of doc.tables) {
     for (const row of table.rows) {
       if (row.length === 2 && /本期应还款额/.test(row[0] ?? '')) {
-        const parsed = parseAmountToMinor(row[1] ?? '')
+        const parsed = parseAmountToMinor(row[1] ?? '', accountCurrency)
         if (parsed && summary.currentBalanceMinor === null) {
           summary.currentBalanceMinor = parsed.minor
-          components.push({ label: '本期应还款额 New Balance', minor: parsed.minor, currency: 'CNY' })
+          components.push({ label: '本期应还款额 New Balance', minor: parsed.minor, currency: accountCurrency })
         }
       }
       if (row.length === 2 && /信用额度/.test(row[0] ?? '')) {
-        const parsed = parseAmountToMinor(row[1] ?? '')
+        const parsed = parseAmountToMinor(row[1] ?? '', accountCurrency)
         if (parsed && summary.creditLimitMinor === null) {
           summary.creditLimitMinor = Math.abs(parsed.minor)
         }
@@ -160,101 +178,87 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
     }
   }
 
-  const equationHeaderIndex = doc.tables.findIndex((table) =>
-    table.rows.some(
-      (row) =>
-        row.filter((cell) => /本期应还金额|上期账单\s*应还金额|本期账单金额|本期还款/.test(cell)).length >= 3,
-    ),
-  )
-  if (equationHeaderIndex !== -1) {
-    const headerTable = doc.tables[equationHeaderIndex]!
-    const headerRow = headerTable.rows.find(
-      (row) => row.filter((cell) => /本期应还金额|上期账单\s*应还金额|本期账单金额|本期还款/.test(cell)).length >= 3,
-    )
-    const valueTable = doc.tables.slice(equationHeaderIndex + 1).find((table) =>
-      table.rows.some((row) => row.filter((cell) => /-?\d+\.\d{2}/.test(cell)).length >= 3),
-    )
-    if (headerRow && valueTable) {
-      const valueRow = valueTable.rows.find(
-        (row) => row.filter((cell) => /-?\d+\.\d{2}/.test(cell)).length >= 3,
-      )
-      if (valueRow) {
-        if (valueRow.length === headerRow.length) {
-          const currentIndex = headerRow.findIndex((cell) => /本期应还金额/.test(cell))
-          const previousIndex = headerRow.findIndex((cell) => /上期账单\s*应还金额/.test(cell))
-          const chargeIndex = headerRow.findIndex((cell) => /本期账单金额/.test(cell))
-          const paymentsIndex = headerRow.findIndex((cell) => /本期还款/.test(cell))
-          const currentParsed = currentIndex !== -1 ? parseAmountToMinor(valueRow[currentIndex] ?? '') : null
-          const previousParsed = previousIndex !== -1 ? parseAmountToMinor(valueRow[previousIndex] ?? '') : null
-          const chargeParsed = chargeIndex !== -1 ? parseAmountToMinor(valueRow[chargeIndex] ?? '') : null
-          const paymentsParsed = paymentsIndex !== -1 ? parseAmountToMinor(valueRow[paymentsIndex] ?? '') : null
-          if (currentParsed && summary.currentBalanceMinor === null) {
-            summary.currentBalanceMinor = currentParsed.minor
-            components.push({ label: '本期应还金额 New Balance', minor: currentParsed.minor, currency: 'CNY' })
-          }
-          if (previousParsed && summary.previousBalanceMinor === null) {
-            summary.previousBalanceMinor = previousParsed.minor
-            components.push({ label: '上期账单应还金额 Previous Balance', minor: previousParsed.minor, currency: 'CNY' })
-          }
-          if (chargeParsed && summary.newDebitMinor === null) {
-            summary.newDebitMinor = Math.abs(chargeParsed.minor)
-            components.push({ label: '本期账单金额 New Charge', minor: summary.newDebitMinor, currency: 'CNY' })
-          }
-          if (paymentsParsed && summary.newCreditMinor === null) {
-            summary.newCreditMinor = Math.abs(paymentsParsed.minor)
-            components.push({ label: '本期还款、退货金额 Payments', minor: summary.newCreditMinor, currency: 'CNY' })
-          }
-        } else if (valueRow.length === 8) {
-          // Real statements compress the 14-column header (with -/=/+ operators)
-          // into 8 value columns: curr, current, deposit, previous, prevDeposit,
-          // newCharge, payments, adjustment.
-          // Equation: current - deposit = previous - prevDeposit + charge - payments - adjustment.
-          // Store net balances so the shared reconciler holds.
-          const currentParsed = parseAmountToMinor(valueRow[1] ?? '')
-          const depositParsed = parseAmountToMinor(valueRow[2] ?? '')
-          const previousParsed = parseAmountToMinor(valueRow[3] ?? '')
-          const prevDepositParsed = parseAmountToMinor(valueRow[4] ?? '')
-          const chargeParsed = parseAmountToMinor(valueRow[5] ?? '')
-          const paymentsParsed = parseAmountToMinor(valueRow[6] ?? '')
-          const adjustmentParsed = parseAmountToMinor(valueRow[7] ?? '')
-          const deposit = depositParsed ? Math.abs(depositParsed.minor) : 0
-          const prevDeposit = prevDepositParsed ? Math.abs(prevDepositParsed.minor) : 0
-          const adjustment = adjustmentParsed ? Math.abs(adjustmentParsed.minor) : 0
-          if (currentParsed && previousParsed && summary.currentBalanceMinor === null) {
-            const netCurrent = currentParsed.minor - deposit
-            const netPrevious = previousParsed.minor - prevDeposit
-            summary.currentBalanceMinor = netCurrent
-            summary.previousBalanceMinor = netPrevious
-            components.push({ label: '本期应还金额 New Balance (net)', minor: netCurrent, currency: 'CNY' })
-            components.push({ label: '上期账单应还金额 Previous Balance (net)', minor: netPrevious, currency: 'CNY' })
-            if (deposit !== 0 || prevDeposit !== 0 || adjustment !== 0) {
-              components.push({ label: '溢缴/调整 Deposit/Adjustment', minor: deposit + prevDeposit + adjustment, currency: 'CNY' })
-            }
-          } else {
-            if (currentParsed && summary.currentBalanceMinor === null) {
-              summary.currentBalanceMinor = currentParsed.minor
-              components.push({ label: '本期应还金额 New Balance', minor: currentParsed.minor, currency: 'CNY' })
-            }
-            if (previousParsed && summary.previousBalanceMinor === null) {
-              summary.previousBalanceMinor = previousParsed.minor
-              components.push({ label: '上期账单应还金额 Previous Balance', minor: previousParsed.minor, currency: 'CNY' })
-            }
-          }
-          if (chargeParsed && summary.newDebitMinor === null) {
-            summary.newDebitMinor = Math.abs(chargeParsed.minor)
-            components.push({ label: '本期账单金额 New Charge', minor: summary.newDebitMinor, currency: 'CNY' })
-          }
-          if (paymentsParsed && summary.newCreditMinor === null) {
-            summary.newCreditMinor = Math.abs(paymentsParsed.minor)
-            components.push({ label: '本期还款、退货金额 Payments', minor: summary.newCreditMinor, currency: 'CNY' })
-          }
-          if (adjustment !== 0) {
-            components.push({ label: '本期调整金额 Adjustment', minor: adjustment, currency: 'CNY' })
-          }
+  if (headerRow && valueRow) {
+    if (valueRow.length === headerRow.length) {
+      const currentIndex = headerRow.findIndex((cell) => /本期应还金额/.test(cell))
+      const previousIndex = headerRow.findIndex((cell) => /上期账单\s*应还金额/.test(cell))
+      const chargeIndex = headerRow.findIndex((cell) => /本期账单金额/.test(cell))
+      const paymentsIndex = headerRow.findIndex((cell) => /本期还款/.test(cell))
+      const adjustmentIndex = headerRow.findIndex((cell) => /本期调整金额/.test(cell))
+      const currentParsed = currentIndex !== -1 ? parseAmountToMinor(valueRow[currentIndex] ?? '', accountCurrency) : null
+      const previousParsed = previousIndex !== -1 ? parseAmountToMinor(valueRow[previousIndex] ?? '', accountCurrency) : null
+      const chargeParsed = chargeIndex !== -1 ? parseAmountToMinor(valueRow[chargeIndex] ?? '', accountCurrency) : null
+      const paymentsParsed = paymentsIndex !== -1 ? parseAmountToMinor(valueRow[paymentsIndex] ?? '', accountCurrency) : null
+      const adjustmentParsed = adjustmentIndex !== -1 ? parseAmountToMinor(valueRow[adjustmentIndex] ?? '', accountCurrency) : null
+      if (currentParsed && summary.currentBalanceMinor === null) {
+        summary.currentBalanceMinor = currentParsed.minor
+        components.push({ label: '本期应还金额 New Balance', minor: currentParsed.minor, currency: accountCurrency })
+      }
+      if (previousParsed && summary.previousBalanceMinor === null) {
+        summary.previousBalanceMinor = previousParsed.minor
+        components.push({ label: '上期账单应还金额 Previous Balance', minor: previousParsed.minor, currency: accountCurrency })
+      }
+      if (chargeParsed && summary.newDebitMinor === null) {
+        summary.newDebitMinor = Math.abs(chargeParsed.minor)
+        components.push({ label: '本期账单金额 New Charge', minor: summary.newDebitMinor, currency: accountCurrency })
+      }
+      if (paymentsParsed && summary.newCreditMinor === null) {
+        summary.newCreditMinor = Math.abs(paymentsParsed.minor)
+        components.push({ label: '本期还款、退货金额 Payments', minor: summary.newCreditMinor, currency: accountCurrency })
+      }
+      if (adjustmentParsed) {
+        summary.adjustmentMinor = adjustmentParsed.minor
+        components.push({ label: '本期调整金额 Adjustment', minor: adjustmentParsed.minor, currency: accountCurrency })
+      }
+    } else if (valueRow.length === 8) {
+      // Real statements compress the 14-column header (with -/=/+ operators)
+      // into 8 value columns: curr, current, deposit, previous, prevDeposit,
+      // newCharge, payments, adjustment.
+      // Equation: current - deposit = previous - prevDeposit + charge - payments - adjustment.
+      // Store net balances so the shared reconciler holds.
+      const currentParsed = parseAmountToMinor(valueRow[1] ?? '', accountCurrency)
+      const depositParsed = parseAmountToMinor(valueRow[2] ?? '', accountCurrency)
+      const previousParsed = parseAmountToMinor(valueRow[3] ?? '', accountCurrency)
+      const prevDepositParsed = parseAmountToMinor(valueRow[4] ?? '', accountCurrency)
+      const chargeParsed = parseAmountToMinor(valueRow[5] ?? '', accountCurrency)
+      const paymentsParsed = parseAmountToMinor(valueRow[6] ?? '', accountCurrency)
+      const adjustmentParsed = parseAmountToMinor(valueRow[7] ?? '', accountCurrency)
+      const deposit = depositParsed ? Math.abs(depositParsed.minor) : 0
+      const prevDeposit = prevDepositParsed ? Math.abs(prevDepositParsed.minor) : 0
+      const adjustment = adjustmentParsed?.minor ?? 0
+      if (currentParsed && previousParsed && summary.currentBalanceMinor === null) {
+        const netCurrent = currentParsed.minor - deposit
+        const netPrevious = previousParsed.minor - prevDeposit
+        summary.currentBalanceMinor = netCurrent
+        summary.previousBalanceMinor = netPrevious
+        components.push({ label: '本期应还金额 New Balance (net)', minor: netCurrent, currency: accountCurrency })
+        components.push({ label: '上期账单应还金额 Previous Balance (net)', minor: netPrevious, currency: accountCurrency })
+        if (deposit !== 0 || prevDeposit !== 0) {
+          components.push({ label: '溢缴款 Deposit', minor: deposit + prevDeposit, currency: accountCurrency })
+        }
+      } else {
+        if (currentParsed && summary.currentBalanceMinor === null) {
+          summary.currentBalanceMinor = currentParsed.minor
+          components.push({ label: '本期应还金额 New Balance', minor: currentParsed.minor, currency: accountCurrency })
+        }
+        if (previousParsed && summary.previousBalanceMinor === null) {
+          summary.previousBalanceMinor = previousParsed.minor
+          components.push({ label: '上期账单应还金额 Previous Balance', minor: previousParsed.minor, currency: accountCurrency })
         }
       }
+      if (chargeParsed && summary.newDebitMinor === null) {
+        summary.newDebitMinor = Math.abs(chargeParsed.minor)
+        components.push({ label: '本期账单金额 New Charge', minor: summary.newDebitMinor, currency: accountCurrency })
+      }
+      if (paymentsParsed && summary.newCreditMinor === null) {
+        summary.newCreditMinor = Math.abs(paymentsParsed.minor)
+        components.push({ label: '本期还款、退货金额 Payments', minor: summary.newCreditMinor, currency: accountCurrency })
+      }
+      if (adjustmentParsed) {
+        summary.adjustmentMinor = adjustment
+        components.push({ label: '本期调整金额 Adjustment', minor: adjustment, currency: accountCurrency })
+      }
     }
-    void headerRow
   }
 
   // Minimum payment: look for 最低还款/最低应还 nearby.
@@ -263,12 +267,20 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
     /最低(?:还款额|应还)[\s\S]{0,24}?(-?[\d,]+\.\d{2})/.exec(fullText) ??
     /Min Payment[\s\S]{0,24}?(-?[\d,]+\.\d{2})/.exec(fullText)
   if (minimumMatch && summary.minimumPaymentMinor === null) {
-    const parsed = parseAmountToMinor(minimumMatch[1])
+    const parsed = parseAmountToMinor(minimumMatch[1], accountCurrency)
     if (parsed) summary.minimumPaymentMinor = Math.abs(parsed.minor)
   }
 
   summary.components = components
   return summary
+}
+
+function abcEquationCurrency(cell: string): string {
+  const code = /\(([A-Z]{3})\)/i.exec(cell)?.[1]
+  if (code) return normalizeCurrencyCode(code)
+  if (/人民币/.test(cell)) return 'CNY'
+  if (/美元/.test(cell)) return 'USD'
+  return 'CNY'
 }
 
 /**

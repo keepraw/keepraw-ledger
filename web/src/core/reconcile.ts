@@ -6,11 +6,10 @@ import type { ReconciliationCheck, ReconciliationResult, StatementSummary, Trans
  * Statement reconciliation.
  *
  * Parsing transactions successfully is NOT enough to call a statement correct.
- * Three independent checks run for every statement:
+ * Reconciliation checks run for every statement:
  *
- *   1. balance_equation  本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记
- *   2. debit_detail      sum of debit transactions vs 本期新增支出
- *   3. credit_detail     sum of credit transactions vs 本期还款及其他贷记
+ *   1. balance_equation  本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记 − 本期调整金额
+ *   2. debit_detail / credit_detail for gross detail, or net_detail for bank-netted detail
  *
  * Any mismatch, or missing summary data, yields `mismatch` / `insufficient` and the
  * statement is routed to manual review instead of being folded into the statistics.
@@ -46,7 +45,7 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   if (!hasPrevious || !hasCurrent) {
     checks.push({
       id: 'balance_equation',
-      label: '本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记',
+      label: '本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记 − 本期调整金额',
       status: 'missing',
       expectedMinor: null,
       actualMinor: null,
@@ -60,12 +59,12 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
     const credit = summary.newCreditMinor ?? 0
     const charge = summary.chargeMinor ?? 0
     const interest = summary.interestMinor ?? 0
-    // 本期余额 = 上期余额 + 本期新增支出 + 费用 + 利息 − 本期还款及其他贷记
-    const computed = summary.previousBalanceMinor! + debit + charge + interest - credit
+    // 本期余额 = 上期余额 + 本期新增支出 + 费用 + 利息 − 本期还款及其他贷记 − 本期调整金额
+    const computed = summary.previousBalanceMinor! + debit + charge + interest - credit - (summary.adjustmentMinor ?? 0)
     const difference = summary.currentBalanceMinor! - computed
     checks.push({
       id: 'balance_equation',
-      label: '本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记',
+      label: '本期余额 = 上期余额 + 本期支出 + 费用 + 利息 − 本期还款及其他贷记 − 本期调整金额',
       status: difference === 0 ? 'passed' : 'mismatch',
       expectedMinor: computed,
       actualMinor: summary.currentBalanceMinor,
@@ -81,16 +80,20 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   }
 
   // --- 2. new spending detail ----------------------------------------------
-  checks.push(
-    detailCheck(
-      'debit_detail',
-      '交易明细借记合计 = 本期新增支出 + 费用 + 利息',
-      'debit',
-      summary.newDebitMinor === null ? null : summary.newDebitMinor + (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0),
-      active,
-      currency,
-    ),
-  )
+  if (summary.detailBasis === 'net') {
+    checks.push(netDetailCheck(summary, active, currency))
+  } else {
+    checks.push(
+      detailCheck(
+        'debit_detail',
+        '交易明细借记合计 = 本期新增支出 + 费用 + 利息',
+        'debit',
+        summary.newDebitMinor === null ? null : summary.newDebitMinor + (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0),
+        active,
+        currency,
+      ),
+    )
+  }
 
   // --- 3. charges and interest ---------------------------------------------
   if (summary.chargeMinor !== null || summary.interestMinor !== null) {
@@ -106,16 +109,18 @@ export function reconcileStatement(input: ReconcileInput): ReconciliationResult 
   }
 
   // --- 4. credit detail ----------------------------------------------------
-  checks.push(
-    detailCheck(
-      'credit_detail',
-      '交易明细贷记合计 = 本期贷记汇总',
-      'credit',
-      summary.newCreditMinor,
-      active,
-      currency,
-    ),
-  )
+  if (summary.detailBasis !== 'net') {
+    checks.push(
+      detailCheck(
+        'credit_detail',
+        '交易明细贷记合计 = 本期贷记汇总',
+        'credit',
+        summary.newCreditMinor,
+        active,
+        currency,
+      ),
+    )
+  }
 
   // --- 5. transaction count ------------------------------------------------
   if (active.length === 0) {
@@ -191,6 +196,49 @@ function detailCheck(
             expected,
             currency,
           )}，差额 ${formatMinor(difference, currency)}`,
+  }
+}
+
+function netDetailCheck(
+  summary: StatementSummary,
+  transactions: Transaction[],
+  currency: string,
+): ReconciliationCheck {
+  const expected = summary.newDebitMinor === null || summary.newCreditMinor === null
+    ? null
+    : summary.newDebitMinor + (summary.chargeMinor ?? 0) + (summary.interestMinor ?? 0) - summary.newCreditMinor
+  if (expected === null) {
+    return {
+      id: 'net_detail',
+      label: '交易明细净额 = 本期新增 + 费用 + 利息 − 本期贷记',
+      status: 'missing',
+      expectedMinor: null,
+      actualMinor: null,
+      differenceMinor: null,
+      detail: '账单缺少本期新增或本期贷记汇总金额，无法核对交易明细净额',
+    }
+  }
+
+  const relevant = transactions.filter((tx) =>
+    !hasUnresolvedDirection(tx) &&
+    effectiveCurrencyForDirection(tx) === currency &&
+    !isPostingExcluded(tx),
+  )
+  const actual = relevant.reduce((sum, tx) => {
+    const amount = effectiveAmountForDirection(tx) ?? 0
+    return sum + (effectiveDirection(tx) === 'credit' ? -Math.abs(amount) : Math.abs(amount))
+  }, 0)
+  const difference = expected - actual
+  return {
+    id: 'net_detail',
+    label: '交易明细净额 = 本期新增 + 费用 + 利息 − 本期贷记',
+    status: difference === 0 ? 'passed' : 'mismatch',
+    expectedMinor: expected,
+    actualMinor: actual,
+    differenceMinor: difference,
+    detail: difference === 0
+      ? `${relevant.length} 笔净额 ${formatMinor(actual, currency)}，与账单一致`
+      : `${relevant.length} 笔净额 ${formatMinor(actual, currency)}，账单分项为 ${formatMinor(expected, currency)}，差额 ${formatMinor(difference, currency)}`,
   }
 }
 

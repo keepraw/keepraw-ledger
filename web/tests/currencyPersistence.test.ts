@@ -16,7 +16,7 @@ beforeEach(async () => { await db.delete(); await db.open() })
 
 const CASES = [
   ['ccb', SYNTHETIC_CCB_HTML, /<td>CNY<\/td><td>-?[\d,.]+<\/td>/, '<td>JPY</td><td>-100.00</td>'],
-  ['icbc', SYNTHETIC_ICBC_HTML, /<td>[\d,.]+\/RMB<\/td>/, '<td>100.00/JPY</td>'],
+  ['icbc', SYNTHETIC_ICBC_HTML, /<td>3000\.00\/RMB<\/td>/, '<td>100.00/JPY</td>'],
   ['abc', SYNTHETIC_ABC_HTML, /<td>[\d,.]+\/CNY<\/td>/, '<td>100.00/JPY</td>'],
   ['bocom', SYNTHETIC_BOCOM_HTML, /<td>CNY [\d,.]+<\/td>/, '<td>JPY 100.00</td>'],
   ['citic', SYNTHETIC_CITIC_HTML, /<td>CNY -10000\.00<\/td>/, '<td>JPY -100.00</td>'],

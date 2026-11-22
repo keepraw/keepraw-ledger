@@ -154,6 +154,7 @@ export function emptySummary(): StatementSummary {
     newCreditMinor: null,
     chargeMinor: null,
     interestMinor: null,
+    adjustmentMinor: null,
     currentBalanceMinor: null,
     minimumPaymentMinor: null,
     creditLimitMinor: null,
