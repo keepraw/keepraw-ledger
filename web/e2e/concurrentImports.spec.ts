@@ -60,8 +60,8 @@ for (const identical of [false, true]) {
       status: identical ? 'reconciled' : 'needs_review', reconciliation: { status: identical ? 'passed' : 'mismatch' } })
     await page.goto('/#/transactions'); await other.goto('/#/transactions')
     await expect(other.locator('tbody tr')).toHaveCount(identical ? 1 : 2)
-    await page.locator('tbody tr').first().locator('select').selectOption('旅行')
-    await expect(other.locator('tbody tr').first().locator('select')).toHaveValue('旅行')
+    await expect(page.getByRole('columnheader', { name: '分类', exact: true })).toHaveCount(0)
+    await expect(other.locator('tbody select')).toHaveCount(0)
     await other.reload()
     await expect(other.locator('tbody tr')).toHaveCount(identical ? 1 : 2)
     if (!identical) {

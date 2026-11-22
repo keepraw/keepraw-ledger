@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { statementNeedsReview } from '../../core/statementState'
 import { useApp } from '../../app/AppStore'
 import { DEFAULT_FILTERS, applyFilters, filterByStatementTrust, groupBy, groupByBank, monthlyTrend, summarize, untrustedAmount, type Filters } from '../../core/analytics'
 import { bankName, type BankId } from '../../core/types'
@@ -59,7 +60,12 @@ export function DashboardPage() {
     filters.from && filters.to && filters.from.slice(0, 7) === filters.to.slice(0, 7) ? filters.from.slice(0, 7) : ''
 
   const hasData = visibleTransactions.length > 0
-  const pendingStatements = visibleStatements.filter((s) => s.status !== 'reconciled' && s.status !== 'imported').length
+  const pendingStatements = visibleStatements.filter(statementNeedsReview).length
+  const excludedStatements = useMemo(() => {
+    const { excludedStatementIds } = filterByStatementTrust(visibleTransactions, visibleStatements, false)
+    return new Set(applyFilters(visibleTransactions, filters)
+      .filter(row => excludedStatementIds.has(row.statementId)).map(row => row.statementId)).size
+  }, [visibleTransactions, visibleStatements, filters])
 
   const displayedCards = showAllCards ? byCard : byCard.slice(0, 10)
 
@@ -171,13 +177,13 @@ export function DashboardPage() {
             <Stat label="交易笔数" value={summary.transactionCount} hint="符合统计条件的有效入账记录" />
           </div>
 
-          {pendingStatements > 0 && !filters.includeUnreconciled ? (
+          {excludedStatements > 0 && !filters.includeUnreconciled ? (
             <div className="notice notice-warn">
-              <Badge tone="warn">{pendingStatements}</Badge>
+              <Badge tone="warn">{excludedStatements}</Badge>
               <div>
-                <strong>有 {pendingStatements} 份账单未通过对账，暂未计入以上统计</strong>
+                <strong>有 {excludedStatements} 份账单未通过对账，暂未计入以上统计</strong>
                 <p>
-                  这些账单涉及金额 ¥{formatMinor(excluded)}。请到「人工复核」页查看差额原因，确认后再勾选「包含待复核账单」纳入统计。
+                  这些账单涉及金额 ¥{formatMinor(excluded)}。确认无需对账仅关闭复核提醒，不会使账单通过对账。请到「人工复核」页查看原因，确认后再勾选「包含待复核账单」纳入统计。
                 </p>
               </div>
             </div>

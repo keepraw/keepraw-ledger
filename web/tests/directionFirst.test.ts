@@ -369,7 +369,7 @@ it('v5 → v6 repairs atomically and idempotently, preserving every other proper
   const upgraded = new BillDatabase(name)
   try {
     await upgraded.open()
-    expect(upgraded.verno).toBe(6)
+    expect(upgraded.verno).toBe(7)
     expect(await upgraded.transactions.toArray()).toEqual(expectedRepairs(rows).sort((a, b) => a.id.localeCompare(b.id)))
     expect(await readOther(upgraded)).toEqual(other)
     await upgraded.transaction('rw', upgraded.transactions, tx => repairDirectionFirst(tx))
@@ -384,7 +384,7 @@ it('an abort after v6 repair rolls back all edits and the version, then retries 
   const old = new Dexie(name); old.version(5).stores(schema)
   const rows = historicalRows(); await old.table('transactions').bulkAdd(rows); old.close()
   const failing = new BillDatabase(name)
-  failing.version(7).stores({}).upgrade(() => { throw new Error('synthetic failure after direction repair') })
+  failing.version(8).stores({}).upgrade(() => { throw new Error('synthetic failure after direction repair') })
   await expect(failing.open()).rejects.toThrow('synthetic failure after direction repair'); failing.close()
   const rollback = new Dexie(name)
   await rollback.open()

@@ -55,7 +55,7 @@ it('atomically repairs native rows; preserves all other fields, notes and stores
     // Force the registered repair step to run again in an upgrade transaction.
     upgraded.close()
     const repeated = new BillDatabase(name)
-    repeated.version(7).stores({}).upgrade(repairNativeLedgerConfidence)
+    repeated.version(8).stores({}).upgrade(repairNativeLedgerConfidence)
     try {
       await repeated.open(); expect(await read(repeated)).toEqual(expected)
       repeated.close(); await repeated.open(); expect(await read(repeated)).toEqual(expected)
@@ -72,7 +72,7 @@ it('rolls back completed flag repair and database version on abort, then safely 
   await old.table('transactions').put(row); old.close()
   const failing = new BillDatabase(name)
   let repaired = false
-  failing.version(7).stores({}).upgrade(async transaction => {
+  failing.version(8).stores({}).upgrade(async transaction => {
     repaired = !(await transaction.table('transactions').get(row.id)).flags.includes('low_confidence')
     throw new Error('synthetic failure after repair')
   })

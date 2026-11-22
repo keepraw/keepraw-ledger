@@ -10,9 +10,10 @@ import { assertLedgerRevision, bumpLedgerRevision, LedgerConflictError, readLedg
 const DEMO_PURGE_KEY = 'migration:memory-only-demo'
 import { validateBackup } from '../backup/validation'
 import { createJsonBlob } from '../backup/json'
-import { deriveStatementState } from '../core/statementState'
+import { canAcknowledgeStatement, deriveStatementState, normalizeHistoricalStatements } from '../core/statementState'
 import { getStatementExpectedTotal } from '../core/reconciliation'
 import { MAX_ENTRY_BYTES } from '../backup/zipSafety'
+import type { BankId } from '../core/types'
 export { validateBackup } from '../backup/validation'
 
 /** Caller holds the statements + transactions write transaction. Indexed by statementId. */
@@ -35,6 +36,20 @@ export async function recomputeStatement(statementId: string): Promise<Statement
     const statement = (await rebuildStatementStates([statementId]))[0]
     if (statement) await bumpLedgerRevision()
     return statement
+  })
+}
+
+export async function acknowledgeStatement(statementId: string, acknowledged: boolean): Promise<Statement> {
+  return db.transaction('rw', db.statements, db.transactions, db.settings, async () => {
+    const current = await db.statements.get(statementId)
+    if (!current) throw new Error('账单不存在，请刷新后重试。')
+    const rows = await db.transactions.where('statementId').equals(statementId).toArray()
+    const statement = deriveStatementState(current, rows)
+    if (acknowledged && !canAcknowledgeStatement(statement)) throw new Error('仅缺少汇总信息且不存在对账差额的账单可确认无需对账。')
+    const next = { ...statement, reconciliationAcknowledged: acknowledged }
+    await db.statements.put(next)
+    await bumpLedgerRevision()
+    return next
   })
 }
 
@@ -102,7 +117,9 @@ export async function persistImportResults(results: IngestResult[], expectedRevi
         }
       }
       // A partial later source cannot erase an already stored bank basis.
-      await db.statements.put(current && existingBankTotal && !incomingBankTotal ? current : result.statement)
+      const next = current && existingBankTotal && !incomingBankTotal ? current : result.statement
+      await db.statements.put(current?.reconciliationAcknowledged === undefined ? next
+        : { ...next, reconciliationAcknowledged: current.reconciliationAcknowledged })
       // Existing rows may have been edited since parsing. Never write them back.
       const insertedIds = new Set(result.inserted.map((tx) => tx.id))
       await db.transactions.bulkAdd(result.transactions.filter((tx) => insertedIds.has(tx.id)).map(withoutLegacyMerchant))
@@ -285,7 +302,8 @@ export async function importBackup(payload: BackupPayload): Promise<void> {
   if (!validateBackup(payload)) throw new Error('备份包含无效记录，拒绝恢复')
   // Normalize old V1/V2 JSON and ZIP rows immutably before any writes.
   // This also removes PR #48 flags without relying on a database upgrade.
-  payload = { ...payload, transactions: payload.transactions.map(normalizeRestoredTransaction) }
+  payload = { ...payload, transactions: payload.transactions.map(normalizeRestoredTransaction),
+    statements: normalizeHistoricalStatements(payload.statements, payload.transactions, payload.imports) }
   // V1 restores never touch reviewNotes: existing local notes stay unchanged.
   // V2 restores merge notes in the same atomic transaction as financial rows.
   const incomingNotes: ReviewNotePayload[] = payload.version === 2 ? payload.reviewNotes : []
@@ -558,7 +576,7 @@ export async function setArchiveFileExternal(fileHash: string, external: boolean
 }
 
 export async function listArchiveFiles(): Promise<{ revision: LedgerRevision; files: Array<{
-  fileHash: string; fileName: string; size: number; external: boolean
+  fileHash: string; fileName: string; bank: BankId; size: number; external: boolean; missing: boolean
 }> }> {
   return db.transaction('r', db.imports, db.attachments, db.settings, async () => {
     const revision = await readLedgerRevision()
@@ -568,8 +586,9 @@ export async function listArchiveFiles(): Promise<{ revision: LedgerRevision; fi
       if (record.isDemo || hashes.has(record.fileHash)) continue
       hashes.add(record.fileHash)
       const row = await db.attachments.get(record.fileHash)
-      if (row) files.push({ fileHash: row.fileHash, fileName: row.fileName, size: row.data.byteLength,
-        external: await isArchiveFileExternal(row.fileHash) })
+      files.push({ fileHash: record.fileHash, fileName: row?.fileName ?? record.fileName, bank: record.bank,
+        size: row?.data.byteLength ?? record.fileSize, missing: !row,
+        external: await isArchiveFileExternal(record.fileHash) })
     }
     return { revision, files }
   })

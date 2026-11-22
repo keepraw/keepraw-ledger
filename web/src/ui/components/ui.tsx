@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { canAcknowledgeStatement } from '../../core/statementState'
 import { formatMinor } from '../../core/money'
 import {
   REVIEW_FLAG_LABELS,
@@ -83,10 +84,11 @@ export function DirectionBadge({ direction }: { direction: Direction }) {
 }
 
 export function FlagList({ flags }: { flags: ReviewFlag[] }) {
-  if (flags.length === 0) return <span className="subtle">—</span>
+  const activeFlags = flags.filter(flag => flag !== 'uncategorized')
+  if (activeFlags.length === 0) return <span className="subtle">—</span>
   return (
     <div className="tag-list">
-      {flags.map((flag) => (
+      {activeFlags.map((flag) => (
         <Badge key={flag} tone={flag === 'suspected_duplicate' ? 'warn' : 'danger'}>
           {REVIEW_FLAG_LABELS[flag]}
         </Badge>
@@ -110,6 +112,7 @@ const CHECK_LABEL: Record<ReconciliationCheck['status'], string> = {
 }
 
 export function StatementStatusBadge({ statement }: { statement: Statement }) {
+  if (statement.reconciliationAcknowledged && canAcknowledgeStatement(statement)) return <Badge tone="info">已确认无需对账</Badge>
   if (statement.status === 'reconciled') return <Badge tone="ok">对账通过</Badge>
   if (statement.status === 'imported') return <Badge tone="info">历史导入</Badge>
   if (statement.reconciliation.status === 'mismatch') return <Badge tone="danger">对账存在差额</Badge>

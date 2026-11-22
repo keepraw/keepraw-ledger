@@ -48,6 +48,7 @@ test('old oversized evidence: actionable export error, cancellation, external ch
   await page.getByTestId('backup-full').click()
   await expect(page.getByTestId('backup-error')).toContainText(/synthetic-old-65MiB.pdf.*64.*MiB/)
   await expect(page.getByTestId('backup-error')).toContainText('外部保存')
+  await page.getByRole('button', { name: /^查看原始文件/ }).click()
   const management = page.getByTestId('archive-file').filter({ hasText: 'synthetic-old-65MiB.pdf' })
   const jsonDownload = page.waitForEvent('download')
   await page.getByTestId('backup').click()
@@ -95,6 +96,7 @@ test('old oversized evidence: actionable export error, cancellation, external ch
 
 test('an external-file choice in another tab preserves a paused import and rejects stale choices', async ({ page, context }) => {
   await ready(page); await seedOld(page)
+  await page.getByRole('button', { name: /^查看原始文件/ }).click()
   const other = await context.newPage()
   await other.goto('/#/import')
   await other.evaluate(() => {
@@ -128,6 +130,7 @@ test('an external-file choice in another tab preserves a paused import and rejec
   expect(after.imports).toHaveLength(2)
   expect(after.notes).toHaveLength(1)
   await page.reload()
+  await page.getByRole('button', { name: /^查看原始文件/ }).click()
   await expect(page.getByTestId('archive-file').filter({ hasText: 'synthetic-old-65MiB.pdf' })).toContainText('外部保存，不放入 ZIP')
   await other.close()
 })

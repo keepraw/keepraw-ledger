@@ -1,6 +1,6 @@
 import { postingExclusionFromBankToken } from '../core/direction'
 import { hasAmountDirectionConflict } from '../core/direction'
-import { inferCategory, legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
+import { legacyTypeForIdentity, extractSourceTypeToken } from '../core/classify'
 import { type IsoDate, parseDateInput } from '../core/dates'
 import { isSupportedCurrency, parseAmountToMinor } from '../core/money'
 import type { BankId, ReviewFlag } from '../core/types'
@@ -253,7 +253,7 @@ export function parseLegacyRows(dataRows: unknown[][], shape: LegacySheetShape):
       type,
       direction,
       postingExclusion: postingExclusionFromBankToken(extractSourceTypeToken(rawDescription), rawDescription, direction),
-      category: inferCategory(rawDescription),
+      category: '未分类',
       confidence,
       flags,
       rawText: typeof rawTextCell === 'string' ? rawTextCell : String(rawTextCell ?? ''),

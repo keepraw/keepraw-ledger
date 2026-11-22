@@ -62,8 +62,10 @@ describe('Settings supported formats', () => {
     // The page must read from the registry.
     expect(source).toMatch(/parserCatalog|PARSER_DEFINITIONS|PARSERS/)
     // No static bank rows remain.
+    const supportedFormats = source.match(/<table[^>]*data-testid="supported-parsers"[\s\S]*?<\/table>/)?.[0]
+    expect(supportedFormats).toBeDefined()
     for (const name of ['中国银行', '交通银行', '工商银行', '建设银行', '农业银行', '中信银行']) {
-      expect(source).not.toContain(name)
+      expect(supportedFormats).not.toContain(name)
     }
     for (const id of ['boc_pdf', 'bocom_eml', 'icbc_eml', 'ccb_eml', 'abc_eml', 'citic_eml']) {
       expect(source).not.toContain(id)

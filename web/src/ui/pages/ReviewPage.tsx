@@ -1,5 +1,6 @@
 import { needsBankColumnChoice, hasUnresolvedDirection, effectiveDirection, effectiveCurrencyForDirection, effectiveAmountForDirection } from '../../core/direction'
 import { transactionDisplayDescription } from '../../core/descriptionNormalizer'
+import { canAcknowledgeStatement, statementNeedsReview } from '../../core/statementState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReviewPagination, useReviewPagination } from '../components/ReviewPagination'
 import { useApp } from '../../app/AppStore'
@@ -19,7 +20,7 @@ import {
 } from '../components/ui'
 
 export function ReviewPage() {
-  const { visibleStatements, visibleTransactions, updateTransaction, reviewTransactions, saveNote, state, recomputeStatement } = useApp()
+  const { visibleStatements, visibleTransactions, updateTransaction, reviewTransactions, saveNote, state, recomputeStatement, acknowledgeStatement } = useApp()
   const [tab, setTab] = useState<'statements' | 'transactions'>('statements')
   const [showAllStatements, setShowAllStatements] = useState(false)
   const [selectedStatement, setSelectedStatement] = useState<string | null>(null)
@@ -33,13 +34,17 @@ export function ReviewPage() {
 
   const flaggedStatements = useMemo(
     // Imported history has no balance to reconcile, so it never enters the review queue.
-    () => visibleStatements.filter((statement) => statement.status !== 'reconciled' && statement.status !== 'imported'),
+    () => visibleStatements.filter(statementNeedsReview),
     [visibleStatements],
   )
   const flaggedTransactions = useMemo(
     () =>
       visibleTransactions.filter(
-        (tx) => tx.reviewStatus !== 'rejected' && (tx.reviewStatus === 'pending' || tx.flags.length > 0 || hasUnresolvedDirection(tx)),
+        (tx) => {
+          const flags = tx.flags.filter(flag => flag !== 'uncategorized')
+          return tx.reviewStatus !== 'rejected' && ((tx.reviewStatus === 'pending' && (tx.flags.length === 0 || flags.length > 0)) ||
+            flags.length > 0 || hasUnresolvedDirection(tx))
+        },
       ),
     [visibleTransactions],
   )
@@ -123,7 +128,7 @@ export function ReviewPage() {
       <div className="page-head">
         <div>
           <h1>人工复核</h1>
-          <p>{state.demoMode ? '演示交易的修改与备注仅在本次会话内保留，重新生成或刷新后重置。' : '对账差额、疑似重复和未完成分类的交易都会集中在这里，复核状态会持久保存在本机。'}</p>
+          <p>{state.demoMode ? '演示交易的修改与备注仅在本次会话内保留，重新生成或刷新后重置。' : '对账差额和疑似重复的交易会集中在这里，复核状态会持久保存在本机。'}</p>
         </div>
         <div className="segmented">
           <button type="button" aria-pressed={tab === 'statements'} onClick={() => setTab('statements')}>
@@ -220,6 +225,16 @@ export function ReviewPage() {
                       交易修改后自动保存对账结果；也可重新核对并保存历史账单状态。
                     </p>
                   </div>
+                  {canAcknowledgeStatement(active) || active.reconciliationAcknowledged ? (
+                    <button className="btn btn-sm" type="button" disabled={recomputing || state.demoMode} onClick={() => {
+                      setRecomputing(true); setRecomputeError(null)
+                      void acknowledgeStatement(active.id, !active.reconciliationAcknowledged)
+                        .catch((error: unknown) => setRecomputeError(error instanceof Error ? error.message : '保存失败，请重试。'))
+                        .finally(() => setRecomputing(false))
+                    }}>
+                      {active.reconciliationAcknowledged ? '撤销无需对账确认' : '确认无需对账'}
+                    </button>
+                  ) : null}
                   <button className="btn btn-sm" type="button" disabled={recomputing || state.demoMode} onClick={() => void recompute(active.id)}>
                     {recomputing ? '正在保存对账结果…' : '重新核对并保存'}
                   </button>
@@ -291,7 +306,7 @@ export function ReviewPage() {
         )
       ) : flaggedTransactions.length === 0 ? (
         <div className="card">
-          <EmptyState title="没有需要复核的交易" hint="疑似重复、低置信度或未分类的交易会出现在这里。" />
+          <EmptyState title="没有需要复核的交易" hint="疑似重复或低置信度的交易会出现在这里。" />
         </div>
       ) : (
         <div className="card">

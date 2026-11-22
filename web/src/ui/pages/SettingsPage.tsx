@@ -5,9 +5,11 @@ import { triggerDownload } from '../../export/tabular'
 import { getDemoSnapshot } from '../../demo/demoStore'
 import { parserCatalog } from '../../parsers/registry'
 import { Badge, DemoBadge } from '../components/ui'
+import { RawFileManagement } from '../components/RawFileManagement'
 
 export function SettingsPage() {
-  const { state, setSettings, backup, backupData, backupFull, exportLedgerXlsx, restore, archiveStatus, clearData, loadDemoData } = useApp()
+  const { state, setSettings, backup, backupData, backupFull, exportLedgerXlsx, restore, archiveStatus, clearData, loadDemoData, repairBocDescriptions } = useApp()
+  const [repairingDescriptions, setRepairingDescriptions] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null)
   const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null)
   const [status, setStatus] = useState<ArchiveStatus | null>(null)
@@ -46,6 +48,16 @@ export function SettingsPage() {
       if (!row) throw new Error('原始文件已不存在，请刷新后重试。')
       triggerDownload(new Blob([row.data], { type: row.mimeType }), row.fileName)
     } catch (error) { setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '下载失败，请重试。' }) }
+  }
+
+  const repairDescriptions = async () => {
+    setRepairingDescriptions(true)
+    try {
+      const result = await repairBocDescriptions()
+      setMessage({ tone: 'ok', text: `描述修复完成：${result.updated} 笔已更新，${result.skipped} 笔跳过（原件缺失 ${result.missingFiles} 个，解析或校验失败 ${result.failedFiles} 个；其余为无法唯一匹配）。` })
+    } catch (error) {
+      setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '描述修复失败，请重试。' })
+    } finally { setRepairingDescriptions(false) }
   }
 
   const realCounts = {
@@ -264,22 +276,14 @@ export function SettingsPage() {
               />
             </div>
             {backupError ? <div className="notice notice-danger" role="alert" data-testid="backup-error">{backupError}</div> : null}
-            {archiveFiles && archiveFiles.files.length > 0 ? (
-              <div className="stack">
-                <h3>原始文件管理</h3>
-                <p className="subtle">ZIP 单文件上限 64 MiB、总量上限 256 MiB。超限时可先下载原件，再由你选择外部保存。外部保存不会删除本机原件或影响 JSON 备份；ZIP 清单会标记 external，恢复原件需要另外保存的文件。</p>
-                {archiveFiles.files.map(file => (
-                  <div className="stack" key={file.fileHash} data-testid="archive-file">
-                    <div>{file.fileName}（{(file.size / 1024 / 1024).toFixed(2)} MiB）</div>
-                    <div>{file.external ? '外部保存，不放入 ZIP' : '包含在 ZIP'}</div>
-                    <div className="row">
-                      <button className="btn btn-sm" type="button" onClick={() => void downloadOriginal(file.fileHash)}>下载原始文件</button>
-                      <button className="btn btn-sm" type="button" onClick={() => void changeExternal(file.fileHash, !file.external)}>{file.external ? '恢复包含在 ZIP' : '设为外部保存'}</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            <div className="stack">
+              <h3>数据工具</h3>
+              <p className="subtle">仅修复本机仍有原件的中国银行 PDF 交易描述。严格匹配原账单、日期、金额、卡号及来源行；不明确的交易跳过。交易标识、备注与复核决定保留。</p>
+              <button className="btn btn-sm" type="button" disabled={state.demoMode || repairingDescriptions} onClick={() => void repairDescriptions()}>
+                {repairingDescriptions ? '正在修复中国银行交易描述…' : '从原始文件修复中国银行交易描述'}
+              </button>
+            </div>
+            {archiveFiles ? <RawFileManagement files={archiveFiles.files} downloadOriginal={downloadOriginal} changeExternal={changeExternal} /> : null}
             {usage ? (
               <p className="subtle">
                 本地存储占用约 {(usage.usage / 1024 / 1024).toFixed(2)} MB / 配额 {(usage.quota / 1024 / 1024).toFixed(0)} MB

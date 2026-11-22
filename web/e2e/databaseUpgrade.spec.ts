@@ -111,6 +111,6 @@ test('Chromium v3 → v4 removes only merchant; abort rolls back rows, notes, se
   for (const row of expected.transactions as Array<{ merchant?: unknown }>) delete row.merchant
   expect(observed.after).toEqual(expected)
   expect(observed.reopened).toEqual(expected)
-  expect(observed.version).toBe(6)
+  expect(observed.version).toBe(7)
   expect(observed.indexes).toEqual(['statementId'])
 })

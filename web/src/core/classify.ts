@@ -1,4 +1,4 @@
-import type { Category, Direction, TransactionType } from './types'
+import type { Direction, TransactionType } from './types'
 
 /** Frozen source-token encoding for identity compatibility, not financial facts. */
 const TYPE_TOKENS: Record<string, TransactionType> = {
@@ -35,26 +35,6 @@ export function legacyTypeForIdentity(bankToken: string, direction: Direction): 
     if (creditType !== (direction === 'credit')) type = undefined
   }
   return type ?? (direction === 'debit' ? 'purchase' : 'payment')
-}
-
-const CATEGORY_RULES: Array<{ category: Category; re: RegExp }> = [
-  { category: '餐饮', re: /(餐|food|restaurant|餐饮|food|tea|coffee|咖啡|茶|外卖|美团饿了么|kitchen|dining)/i },
-  { category: '交通出行', re: /(uber|滴滴|taxi|地铁|公交|加油|中石化|中石油|停车|高铁|12306|出行|metro|gas|flight|机票)/i },
-  { category: '购物', re: /(商城|购物|超市|便利店|淘宝|天猫|京东|拼多多|商场|amazon|taobao|jd|shop)/i },
-  { category: '生活缴费', re: /(电费|水费|燃气|物业|话费|充值|utility|水电)/i },
-  { category: '医疗健康', re: /(医院|药房|药店|医药|挂号|clinic|pharmacy|health)/i },
-  { category: '教育', re: /(学费|书店|教育|培训|course|book)/i },
-  { category: '住房', re: /(房租|租金|公寓|房贷|rent)/i },
-  { category: '旅行', re: /(携程|酒店|旅行社|住宿|travel|hotel|airbnb|trip)/i },
-  { category: '订阅服务', re: /(会员|订阅|subscription|netflix|icloud|优酷|腾讯视频|爱奇艺)/i },
-]
-
-export function inferCategory(description: string): Category {
-  const text = description ?? ''
-  for (const rule of CATEGORY_RULES) {
-    if (rule.re.test(text)) return rule.category
-  }
-  return '未分类'
 }
 
 export function signForDirection(minor: number, direction: Direction): number {

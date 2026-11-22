@@ -1,8 +1,10 @@
 import * as XLSX from 'xlsx'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readSheetData } from '../src/importers/workbook'
-import { downloadXlsx, transactionToRow, EXPORT_COLUMNS, buildCsv } from '../src/export/tabular'
+import { downloadXlsx, ledgerTransactionToRow, LEDGER_EXPORT_COLUMNS, buildCsv } from '../src/export/tabular'
 import { buildDemoDataset } from '../src/demo/demoData'
+import { detectNativeLedgerShape, parseNativeLedgerRows } from '../src/importers/legacyKeeprawLedgerExportV1'
+import { previewLegacyWorkbook } from '../src/importers/legacyImport'
 import { parseLegacyDate, parseLegacyAmount } from '../src/importers/legacyPythonExportV1'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -49,8 +51,28 @@ describe('patched XLSX compatibility', () => {
     expect(workbook.Sheets['交易明细']!.E2!.t).toBe('s')
     expect(workbook.Sheets['交易明细']!.E2!.f).toBeUndefined()
     expect((await readSheetData(buffer, '交易明细')).rows).toEqual([
-      EXPORT_COLUMNS.map((column) => column.header), transactionToRow(transaction),
+      LEDGER_EXPORT_COLUMNS.map((column) => column.header), ledgerTransactionToRow(transaction),
     ])
     expect(buildCsv([transaction])).toContain("'=WEBSERVICE")
+    expect(LEDGER_EXPORT_COLUMNS.some(column => String(column.key) === 'category')).toBe(false)
+    expect(buildCsv([transaction]).split('\r\n')[0]).not.toContain('分类')
+  })
+  it('recovers category-free exports with stable IDs, and handles empty or invalid rows safely', async () => {
+    const transaction = buildDemoDataset()[0]!.transactions[0]!
+    const headers = LEDGER_EXPORT_COLUMNS.map(column => column.header)
+    const cells = ledgerTransactionToRow(transaction)
+    expect(detectNativeLedgerShape(headers)).toBe('category-free')
+    const preview = await previewLegacyWorkbook(write([headers, cells], '交易明细'),
+      { fileName: 'synthetic.xlsx', fileHash: 'synthetic', fileSize: 1 }, { transactions: [], statements: [], imports: [] })
+    expect(preview.anomalies).toEqual([])
+    expect(preview.rows[0]).toMatchObject({ id: transaction.id, fingerprint: transaction.fingerprint, category: '未分类' })
+    expect(parseNativeLedgerRows([[]], 'category-free')).toMatchObject({ rows: [], anomalies: [], totalRows: 0 })
+    expect(buildCsv([])).toBe(headers.join(','))
+    const invalid = [...cells]
+    invalid[LEDGER_EXPORT_COLUMNS.findIndex(column => column.key === 'id')] = 'invalid-id'
+    expect(parseNativeLedgerRows([invalid], 'category-free')).toMatchObject({ rows: [], totalRows: 1 })
+    expect(parseNativeLedgerRows([invalid], 'category-free').anomalies[0]!.kind).toBe('identity_conflict')
+    expect(parseNativeLedgerRows([[...cells, 'unexpected']], 'category-free').anomalies[0]!.kind).toBe('invalid_field')
+    expect(detectNativeLedgerShape([...headers].reverse())).toBeNull()
   })
 })

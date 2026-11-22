@@ -1,5 +1,4 @@
 import { bankColumnSelectionKey, hasAmountDirectionConflict } from './direction'
-import { inferCategory } from './classify'
 import { assignOccurrences, assignStoredOccurrences, detectDuplicates, transactionId } from './dedupe'
 import { transactionFingerprint, statementKey } from './identity'
 import { reconcileStatement } from './reconcile'
@@ -102,7 +101,7 @@ export function ingestParsedStatement(
       ...(tx.bankColumnAmounts ? { bankColumnAmounts: tx.bankColumnAmounts } : {}),
       ...(tx.directionEvidence ? { directionEvidence: tx.directionEvidence } : {}),
       postingExclusion: tx.postingExclusion ?? null,
-      category: inferCategory(tx.description) as Transaction['category'],
+      category: '未分类',
       confidence: tx.confidence,
       flags,
       reviewStatus: flags.length > 0 ? 'pending' : 'ok',

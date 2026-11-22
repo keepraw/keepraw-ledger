@@ -4,8 +4,8 @@ import { pdfToText } from '../src/parsers/extract'
 import type { SourceDocument } from '../src/parsers/types'
 import { buildSyntheticBocPdf, SYNTHETIC_BOC } from './fixtures/bocPdf'
 
-function makeDoc(): SourceDocument {
-  const pdf = buildSyntheticBocPdf()
+function makeDoc(coordinates: 'top-down' | 'bottom-up' = 'top-down'): SourceDocument {
+  const pdf = buildSyntheticBocPdf(coordinates)
   return {
     fileName: 'synthetic-boc.pdf',
     fileSize: 1000,
@@ -82,13 +82,25 @@ describe('BOC PDF parser', () => {
     expect(-credit.reduce((sum, tx) => sum + tx.transactionAmountMinor, 0)).toBe(SYNTHETIC_BOC.newCreditMinor)
   })
 
-  it('reassembles merchant names wrapped across neighbouring text lines', () => {
-    const statement = bocParser.parse(makeDoc())
+  it.each(['top-down', 'bottom-up'] as const)('reassembles complete wrapped descriptions in %s coordinates', (coordinates) => {
+    const doc = makeDoc(coordinates)
+    const page = doc.pdf!.pages[1]!
+    page.items = page.items.map(item => ({ ...item,
+      text: item.text === '示例超市-西门店' ? '支付宝-阿里健康大药房医'
+        : item.text === '（测试）' ? '药连锁有限公司' : item.text,
+    }))
+    doc.text = pdfToText(doc.pdf!)
+    const statement = bocParser.parse(doc)
     const wrapped = statement.transactions.find((tx) => tx.transactionAmountMinor === 4800)
     expect(wrapped!.description).toBe('微信-示例咖啡店')
 
     const twoLine = statement.transactions.find((tx) => tx.transactionAmountMinor === 100000)
-    expect(twoLine!.rawDescription).toContain('示例超市-西门店')
+    expect(twoLine!.rawDescription).toBe('支付宝-阿里健康大药房医药连锁有限公司')
+    expect(twoLine!.description).toBe('支付宝-阿里健康大药房医药连锁有限公司')
+    expect(statement.transactions.map(tx => tx.transactionAmountMinor)).toEqual([
+      4800, 15200, 100000, -300000, -100000, -100000, -60000,
+    ])
+    expect(statement.transactions.map(tx => tx.sourceRow)).toEqual([0, 1, 2, 3, 4, 5, 6])
   })
 
   it('keeps identical same-day purchases as separate rows', () => {

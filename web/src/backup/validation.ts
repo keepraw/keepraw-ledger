@@ -51,7 +51,7 @@ function reconciliation(value: unknown): boolean {
 }
 
 function statement(value: unknown): value is Row {
-  return object(value) && identifier(value.id) && identifier(value.statementKey) && bank(value.bank) && text(value.cardLast4) &&
+  return object(value) && (value.reconciliationAcknowledged === undefined || typeof value.reconciliationAcknowledged === 'boolean') && identifier(value.id) && identifier(value.statementKey) && bank(value.bank) && text(value.cardLast4) &&
     ['cycleStart', 'cycleEnd', 'dueDate'].every((key) => date(value[key])) && summary(value.summary) && reconciliation(value.reconciliation) &&
     oneOf(value.status, ['reconciled', 'needs_review', 'failed', 'imported']) && nonnegative(value.transactionCount) &&
     strings(value, ['parserId', 'parserVersion', 'sourceFileName', 'sourceFileHash']) && timestamp(value.importedAt) && typeof value.isDemo === 'boolean'

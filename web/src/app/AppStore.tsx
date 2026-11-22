@@ -18,6 +18,7 @@ import {
   setReviewNote,
   patchTransactionWithStatements as persistTransactionPatch,
   recomputeStatement as persistStatementRecomputation,
+  acknowledgeStatement as persistStatementAcknowledgement,
   updateTransactions,
   reviewTransactions as persistReviewTransactions,
   validateBackup,
@@ -27,6 +28,7 @@ import {
 import { deriveStatementState } from '../core/statementState'
 import { createDemoSnapshot, patchDemoSnapshot } from '../demo/demoStore'
 import { buildFullBackupZip, restoreFullBackupZip } from '../backup/archive'
+import { repairBocDescriptions as persistBocDescriptionRepair, type BocDescriptionRepairResult } from '../db/bocDescriptionRepair'
 import {
   hashLegacyFile,
   planLegacyImport,
@@ -72,6 +74,8 @@ interface AppApi {
   updateTransaction: (patch: Partial<Transaction> & { id: string }) => Promise<void>
   reviewTransactions: (ids: readonly string[], decision: 'confirmed' | 'rejected') => Promise<void>
   recomputeStatement: (statementId: string) => Promise<void>
+  acknowledgeStatement: (statementId: string, acknowledged: boolean) => Promise<void>
+  repairBocDescriptions: () => Promise<BocDescriptionRepairResult>
   saveNote: (transactionId: string, note: string) => Promise<void>
   backup: () => Promise<void>
   backupData: () => Promise<void>
@@ -441,6 +445,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (statement) setSnapshot(current => ({ ...current, statements: mergeStatementStates(current.statements, [statement]) }))
   }), [enqueue])
 
+  const acknowledgeStatement = useCallback((statementId: string, acknowledged: boolean) => enqueue(async () => {
+    if ((await loadSettings()).demoMode) throw new Error('请先关闭演示模式，再修改真实账单。')
+    const statement = await persistStatementAcknowledgement(statementId, acknowledged)
+    setSnapshot(current => ({ ...current, statements: mergeStatementStates(current.statements, [statement]) }))
+  }), [enqueue])
+
+  const repairBocDescriptions = useCallback(() => {
+    const demoRequest = settings.demoMode
+    return enqueue(async () => {
+      if (demoRequest) throw new Error('请先关闭演示模式，再修复真实交易描述。')
+      const result = await persistBocDescriptionRepair()
+      await reload()
+      return result
+    })
+  }, [enqueue, reload, settings.demoMode])
+
   const saveNote = useCallback((transactionId: string, note: string) => {
     // Capture the caller's ownership before queueing. A later mode switch must
     // never turn an in-memory demo write into a real database write.
@@ -570,6 +590,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateTransaction: patchTransaction,
       reviewTransactions,
       recomputeStatement,
+      acknowledgeStatement,
+      repairBocDescriptions,
       saveNote,
       backup,
       backupData,
@@ -598,6 +620,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       patchTransaction,
       reviewTransactions,
       recomputeStatement,
+      acknowledgeStatement,
+      repairBocDescriptions,
       saveNote,
       backup,
       backupData,

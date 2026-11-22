@@ -264,7 +264,7 @@ export function buildDemoDataset(): IngestResult[] {
 
   plans.forEach((demoPlan, index) => {
     const parsed = buildStatement(demoPlan, random)
-    // Give a few transactions a manual category and a review flag so the Review page
+    // Give a few transactions review flags so the Review page
     // is not empty on a fresh install.
     const result = ingestParsedStatement(
       parsed,
@@ -281,7 +281,7 @@ export function buildDemoDataset(): IngestResult[] {
     if (index === plans.length - 1) {
       // Flag a couple of rows so the review queue demonstrates the workflow.
       const flagged: Transaction[] = result.transactions.map((tx, i) => {
-        if (i === 1) return { ...tx, flags: [...tx.flags, 'uncategorized'], reviewStatus: 'pending' }
+        if (i === 1) return { ...tx, flags: [...tx.flags, 'low_confidence'], reviewStatus: 'pending' }
         if (i === 3) return { ...tx, flags: [...tx.flags, 'suspected_duplicate'], reviewStatus: 'pending' }
         return tx
       })

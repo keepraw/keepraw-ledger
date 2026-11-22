@@ -110,15 +110,14 @@ test.describe('Transactions', () => {
     expect(file.suggestedFilename()).toBe('交易明细.csv')
   })
 
-  test('changes a category and persists it', async ({ page }) => {
+  test('shows a category-free ledger after import and reload', async ({ page }) => {
     await importSynthetic(page)
     await goto(page, 'transactions')
-    const select = page.locator('tbody select').first()
-    await select.selectOption('餐饮')
-    await expect(select).toHaveValue('餐饮')
+    await expect(page.getByRole('columnheader', { name: '分类', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '重新自动分类' })).toHaveCount(0)
+    await expect(page.locator('tbody select')).toHaveCount(0)
     await page.reload()
-    await goto(page, 'transactions')
-    await expect(page.locator('tbody select').first()).toHaveValue('餐饮')
+    await expect(page.locator('tbody select')).toHaveCount(0)
   })
 })
 

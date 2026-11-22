@@ -1,4 +1,5 @@
-import { REVIEW_FLAGS } from './types'
+import { REVIEW_FLAGS as STORED_REVIEW_FLAGS } from './types'
+import { statementNeedsReview } from './statementState'
 import type {
   ImportRecord,
   ReconciliationStatus,
@@ -10,7 +11,7 @@ import type {
 } from './types'
 
 // Re-export the flag list for consumers without importing types twice.
-export { REVIEW_FLAGS }
+export const REVIEW_FLAGS = STORED_REVIEW_FLAGS.filter(flag => flag !== 'uncategorized')
 
 /**
  * Data-quality centre (read-only).
@@ -157,9 +158,10 @@ export function buildDataQualityReport(input: DataQualityInput): DataQualityRepo
     if (byReviewStatus[tx.reviewStatus] !== undefined) byReviewStatus[tx.reviewStatus] += 1
     else byReviewStatus.pending += 1
 
-    if (tx.flags.length > 0) {
+    const activeFlags = tx.flags.filter(flag => flag !== 'uncategorized')
+    if (activeFlags.length > 0) {
       flagged += 1
-      for (const flag of tx.flags) {
+      for (const flag of activeFlags) {
         if (byFlag[flag] !== undefined) byFlag[flag] += 1
       }
       if (tx.flags.includes('suspected_duplicate')) suspectedDuplicates += 1
@@ -177,7 +179,7 @@ export function buildDataQualityReport(input: DataQualityInput): DataQualityRepo
     if (byStatus[statement.status] !== undefined) byStatus[statement.status] += 1
     const reconciliationStatus = statement.reconciliation.status
     if (byReconciliation[reconciliationStatus] !== undefined) byReconciliation[reconciliationStatus] += 1
-    if (statement.status !== 'reconciled' && statement.status !== 'imported') needsReviewStatements += 1
+    if (statementNeedsReview(statement)) needsReviewStatements += 1
   }
 
   const importsBySourceType: Record<string, number> = {}

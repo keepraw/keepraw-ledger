@@ -111,7 +111,7 @@ not 20. Its first 20 columns form the older supported schema, in exactly this or
 | 9 | 入账金额 | Signed settlement amount → integer minor units |
 | 10 | 交易类型 | Exact exported Chinese type label → native type |
 | 11 | 借贷方向 | 借/贷 → debit/credit; settlement sign must agree |
-| 12 | 分类 | Exact supported category, including user-selected category |
+| 12 | 分类 | Legacy category retained as inert metadata; omitted from current exports |
 | 13 | 复核状态 | ok / pending / confirmed / rejected |
 | 14 | 来源文件 | Original source filename, including empty values |
 | 15 | 文件指纹 | Original source file hash, including empty values |

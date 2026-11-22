@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../app/AppStore'
 import { applyFilters, DEFAULT_FILTERS, type Filters } from '../../core/analytics'
 import { formatMinor } from '../../core/money'
-import { CATEGORIES, bankName, type BankId, type Category, type Transaction } from '../../core/types'
+import { bankName, type BankId, type Transaction } from '../../core/types'
 import { downloadCsv, downloadXlsx } from '../../export/tabular'
 import { Badge, DemoBadge, EmptyState, ReviewStatusBadge, DirectionBadge } from '../components/ui'
 
@@ -66,7 +66,7 @@ export function sortTransactions(transactions: Transaction[], sortKey: SortKey, 
 }
 
 export function TransactionsPage() {
-  const { visibleTransactions, updateTransaction, state } = useApp()
+  const { visibleTransactions, state } = useApp()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState('')
   const [directionFilter, setDirectionFilter] = useState<string>('')
@@ -213,7 +213,6 @@ export function TransactionsPage() {
                   <th className="sortable" onClick={() => toggleSort('direction')}>
                     方向{arrow('direction')}
                   </th>
-                  <th>分类</th>
                   <th>复核</th>
                 </tr>
               </thead>
@@ -242,20 +241,6 @@ export function TransactionsPage() {
                     </td>
                     <td className="nowrap">
                       {hasUnresolvedDirection(tx) && tx.directionEvidence?.kind !== 'bank' ? '待选择' : <DirectionBadge direction={effectiveDirection(tx)} />}
-                    </td>
-                    <td>
-                      <select
-                        className="select"
-                        value={tx.category}
-                        aria-label={`${transactionDisplayDescription(tx)} 分类`}
-                        onChange={(event) => void updateTransaction({ id: tx.id, category: event.target.value as Category })}
-                      >
-                        {CATEGORIES.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
                     </td>
                     <td className="nowrap">
                       <ReviewStatusBadge status={tx.reviewStatus} />

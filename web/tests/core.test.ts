@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { currencyExponent, formatMinor, minorToDecimalString, parseAmountToMinor, sumMinor } from '../src/core/money'
 import { addDays, addMonths, monthEnd, parseDateInput, resolveShortDate } from '../src/core/dates'
-import { inferCategory, legacyTypeForIdentity } from '../src/core/classify'
+import { legacyTypeForIdentity } from '../src/core/classify'
 
 describe('money: integer minor units only', () => {
   it('parses bank formats into exact integer minor units', () => {
@@ -114,9 +114,4 @@ describe('classification', () => {
     expect(legacyTypeForIdentity('', 'credit')).toBe('payment')
   })
 
-  it('assigns categories from the description', () => {
-    expect(inferCategory('消费 支付宝-联东谷餐厅')).toBe('餐饮')
-    expect(inferCategory('消费 财付通-京东商城')).toBe('购物')
-    expect(inferCategory('信用卡还款 转账还款')).toBe('未分类')
-  })
 })
