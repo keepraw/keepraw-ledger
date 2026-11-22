@@ -8,7 +8,8 @@ import { Badge, DemoBadge } from '../components/ui'
 import { RawFileManagement } from '../components/RawFileManagement'
 
 export function SettingsPage() {
-  const { state, setSettings, backup, backupData, backupFull, exportLedgerXlsx, restore, archiveStatus, clearData, loadDemoData } = useApp()
+  const { state, setSettings, backup, backupData, backupFull, exportLedgerXlsx, restore, archiveStatus, clearData, loadDemoData, repairBocDescriptions } = useApp()
+  const [repairingDescriptions, setRepairingDescriptions] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null)
   const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null)
   const [status, setStatus] = useState<ArchiveStatus | null>(null)
@@ -47,6 +48,16 @@ export function SettingsPage() {
       if (!row) throw new Error('原始文件已不存在，请刷新后重试。')
       triggerDownload(new Blob([row.data], { type: row.mimeType }), row.fileName)
     } catch (error) { setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '下载失败，请重试。' }) }
+  }
+
+  const repairDescriptions = async () => {
+    setRepairingDescriptions(true)
+    try {
+      const result = await repairBocDescriptions()
+      setMessage({ tone: 'ok', text: `描述修复完成：${result.updated} 笔已更新，${result.skipped} 笔跳过（原件缺失 ${result.missingFiles} 个，解析或校验失败 ${result.failedFiles} 个；其余为无法唯一匹配）。` })
+    } catch (error) {
+      setMessage({ tone: 'danger', text: error instanceof Error ? error.message : '描述修复失败，请重试。' })
+    } finally { setRepairingDescriptions(false) }
   }
 
   const realCounts = {
@@ -265,6 +276,13 @@ export function SettingsPage() {
               />
             </div>
             {backupError ? <div className="notice notice-danger" role="alert" data-testid="backup-error">{backupError}</div> : null}
+            <div className="stack">
+              <h3>数据工具</h3>
+              <p className="subtle">仅修复本机仍有原件的中国银行 PDF 交易描述。严格匹配原账单、日期、金额、卡号及来源行；不明确的交易跳过。交易标识、已有分类、备注与复核决定保留；变更后仍未分类的交易会自动分类。</p>
+              <button className="btn btn-sm" type="button" disabled={state.demoMode || repairingDescriptions} onClick={() => void repairDescriptions()}>
+                {repairingDescriptions ? '正在修复中国银行交易描述…' : '从原始文件修复中国银行交易描述'}
+              </button>
+            </div>
             {archiveFiles ? <RawFileManagement files={archiveFiles.files} downloadOriginal={downloadOriginal} changeExternal={changeExternal} /> : null}
             {usage ? (
               <p className="subtle">

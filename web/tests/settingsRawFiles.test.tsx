@@ -9,6 +9,7 @@ import { triggerDownload } from '../src/export/tabular'
 const app = vi.hoisted(() => ({ state: { statements: [], transactions: [], imports: [], demoMode: false,
   settings: { theme: 'light', demoMode: false, locale: 'zh-CN' } },
   archiveStatus: vi.fn().mockResolvedValue({ transactionCount: 0, importCount: 0, archivedCount: 0, missingCount: 0 }),
+  repairBocDescriptions: vi.fn(),
 }))
 vi.mock('../src/app/AppStore', () => ({ useApp: () => app }))
 vi.mock('../src/export/tabular', () => ({ triggerDownload: vi.fn() }))
@@ -17,6 +18,7 @@ vi.mock('../src/db/repository', async importOriginal => ({
 }))
 beforeEach(async () => {
   vi.restoreAllMocks(); vi.clearAllMocks()
+  app.state.demoMode = false
   await db.delete(); await db.open()
   const record = ingestSynthetic(['消费 合成原件']).record
   await db.imports.bulkPut([{ ...record, id: 'first', fileName: 'synthetic.pdf', fileHash: 'synthetic', fileSize: 3 },
@@ -66,4 +68,28 @@ it('shows the existing download error if an original disappears before clicking'
   fireEvent.click(within(row).getByRole('button', { name: '下载原始文件' }))
   expect(await screen.findByText('原始文件已不存在，请刷新后重试。')).toBeInTheDocument()
   expect(triggerDownload).not.toHaveBeenCalled()
+})
+
+it('offers explicit BOC repair, disables the button while working and shows updated/skipped counts', async () => {
+  let finish!: (value: { updated: number; skipped: number; missingFiles: number; failedFiles: number }) => void
+  app.repairBocDescriptions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  render(<SettingsPage />)
+  await screen.findByTestId('raw-file-summary')
+  fireEvent.click(screen.getByRole('button', { name: '从原始文件修复中国银行交易描述' }))
+  expect(screen.getByRole('button', { name: '正在修复中国银行交易描述…' })).toBeDisabled()
+  finish({ updated: 1, skipped: 2, missingFiles: 1, failedFiles: 0 })
+  expect(await screen.findByText(/描述修复完成：1 笔已更新，2 笔跳过/)).toBeInTheDocument()
+  expect(app.repairBocDescriptions).toHaveBeenCalledTimes(1)
+})
+
+it('shows repair errors and prevents real-data repair from demo mode', async () => {
+  app.repairBocDescriptions.mockRejectedValueOnce(new Error('synthetic conflict'))
+  const view = render(<SettingsPage />)
+  await screen.findByTestId('raw-file-summary')
+  fireEvent.click(screen.getByRole('button', { name: '从原始文件修复中国银行交易描述' }))
+  expect(await screen.findByText('synthetic conflict')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '从原始文件修复中国银行交易描述' })).toBeEnabled()
+  app.state.demoMode = true
+  view.rerender(<SettingsPage />)
+  expect(screen.getByRole('button', { name: '从原始文件修复中国银行交易描述' })).toBeDisabled()
 })

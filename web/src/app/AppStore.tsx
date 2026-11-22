@@ -29,6 +29,7 @@ import {
 import { deriveStatementState } from '../core/statementState'
 import { createDemoSnapshot, patchDemoSnapshot } from '../demo/demoStore'
 import { buildFullBackupZip, restoreFullBackupZip } from '../backup/archive'
+import { repairBocDescriptions as persistBocDescriptionRepair, type BocDescriptionRepairResult } from '../db/bocDescriptionRepair'
 import {
   hashLegacyFile,
   planLegacyImport,
@@ -76,6 +77,7 @@ interface AppApi {
   recomputeStatement: (statementId: string) => Promise<void>
   acknowledgeStatement: (statementId: string, acknowledged: boolean) => Promise<void>
   categorizeUncategorized: (reference?: { id: string; category: Category }) => Promise<number>
+  repairBocDescriptions: () => Promise<BocDescriptionRepairResult>
   saveNote: (transactionId: string, note: string) => Promise<void>
   backup: () => Promise<void>
   backupData: () => Promise<void>
@@ -463,6 +465,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [enqueue, settings.demoMode])
 
+  const repairBocDescriptions = useCallback(() => {
+    const demoRequest = settings.demoMode
+    return enqueue(async () => {
+      if (demoRequest) throw new Error('请先关闭演示模式，再修复真实交易描述。')
+      const result = await persistBocDescriptionRepair()
+      await reload()
+      return result
+    })
+  }, [enqueue, reload, settings.demoMode])
+
   const saveNote = useCallback((transactionId: string, note: string) => {
     // Capture the caller's ownership before queueing. A later mode switch must
     // never turn an in-memory demo write into a real database write.
@@ -594,6 +606,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       recomputeStatement,
       acknowledgeStatement,
       categorizeUncategorized,
+      repairBocDescriptions,
       saveNote,
       backup,
       backupData,
@@ -624,6 +637,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       recomputeStatement,
       acknowledgeStatement,
       categorizeUncategorized,
+      repairBocDescriptions,
       saveNote,
       backup,
       backupData,
