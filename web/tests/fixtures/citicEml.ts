@@ -49,6 +49,27 @@ export const SYNTHETIC_CITIC_HTML = `
 </html>
 `
 
+const NET_DETAIL_ROWS = [
+  ['20260810', '20260810', '6543', '', '网购退款 示例店', 'CNY -1500.00', 'CNY -1500.00'],
+  ['20260811', '20260811', '6543', '', '刷卡金返现 示例活动', 'CNY -266.39', 'CNY -266.39'],
+  ['20260812', '20260812', '6543', '', '延期还款', 'CNY -12000.00', 'CNY -12000.00'],
+  ['20260812', '20260812', '6543', '', '延期还款', 'CNY 12000.00', 'CNY 12000.00'],
+  ['20260813', '20260813', '6543', '', '网上消费 示例商城', 'CNY 20000.00', 'CNY 20000.00'],
+  ['20260813', '20260813', '6543', '', '网上消费 示例超市', 'CNY 1098.32', 'CNY 1098.32'],
+].map(rows).join('\n')
+
+export const SYNTHETIC_CITIC_NET_HTML = SYNTHETIC_CITIC_HTML
+  .replace('<td>CNY 2100.00</td>', '<td>CNY 23146.88</td>')
+  .replace(
+    '<td>10000.00</td><td></td><td>10000.00</td><td></td><td>2100.00</td><td></td><td>2100.00</td>',
+    '<td>6714.95</td><td></td><td>6714.95</td><td></td><td>23146.88</td><td></td><td>23146.88</td>',
+  )
+  .replaceAll('<td>CNY -10000.00</td>', '<td>CNY -5000.00</td>')
+  .replace(
+    '    </table>\n    <table><tr><td></td><td>【温馨提示】</td></tr></table>',
+    `${NET_DETAIL_ROWS}\n    </table>\n    <table><tr><td></td><td>【温馨提示】</td></tr></table>`,
+  )
+
 export const SYNTHETIC_CITIC = {
   cardLast4: '6543',
   cycleStart: '2026-07-15',

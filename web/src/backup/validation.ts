@@ -37,6 +37,8 @@ function summary(value: unknown): boolean {
   if (!object(value)) return false
   return ['previousBalanceMinor', 'newDebitMinor', 'newCreditMinor', 'chargeMinor', 'interestMinor',
     'currentBalanceMinor', 'minimumPaymentMinor', 'creditLimitMinor'].every((key) => minor(value[key])) &&
+    (value.adjustmentMinor === undefined || minor(value.adjustmentMinor)) &&
+    (value.detailBasis === undefined || oneOf(value.detailBasis, ['gross', 'net'])) &&
     date(value.dueDate) && Array.isArray(value.components) && value.components.every((entry) =>
       object(entry) && text(entry.label) && minor(entry.minor) && currency(entry.currency))
 }

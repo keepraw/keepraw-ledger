@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { parseAmountToMinor, currencyExponent } from '../src/core/money'
-import { ingestParsedStatement } from '../src/core/ingest'
+import { ingestParsedStatement, type IngestResult } from '../src/core/ingest'
 import { db } from '../src/db/db'
 import { persistImportResults, readSnapshot, setReviewNote } from '../src/db/repository'
 import { previewLegacyWorkbook } from '../src/importers/legacyImport'
 import { LEGACY_UNIFIED_COLUMNS } from '../src/importers/legacyPythonExportV1'
 import { LEGACY_KEEPRAW_COLUMNS } from '../src/importers/legacyKeeprawExportV1'
 import { LEGACY_UNIFIED_BILL_COLUMNS } from '../src/importers/legacyUnifiedBillV1'
+import { buildDemoDataset } from '../src/demo/demoData'
+import type { StatementSummary } from '../src/core/types'
 import { buildSourceDocument, pdfToText } from '../src/parsers/extract'
 import { detectParser, parseDocument } from '../src/parsers/registry'
 import { bocParser } from '../src/parsers/boc'
@@ -22,6 +24,35 @@ import { SYNTHETIC_CITIC_HTML } from './fixtures/citicEml'
 const EMPTY = { imports: [], statements: [], transactions: [] }
 const CURRENCIES = ['CNY', 'USD', 'HKD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'CHF', 'JPY', 'KRW', 'VND']
 const MALFORMED = ['10..25', '1.2.3', '1,2,3.45', '12,34', '1.234,56', 'amount 12.34', '--12.34', '(12.34', '12.345']
+
+function demoImportWithSummary(summary: Partial<StatementSummary> = {}): IngestResult {
+  const result = structuredClone(buildDemoDataset()[0]!)
+  if (!result.statement) throw new Error('Expected demo statement')
+  result.statement = { ...result.statement, summary: { ...result.statement.summary, ...summary } }
+  return result
+}
+
+function summaryOnlyReimport(stored: IngestResult, summary: Partial<StatementSummary>): IngestResult {
+  const incoming = structuredClone(stored)
+  if (!incoming.statement) throw new Error('Expected demo statement')
+  const fileHash = 'synthetic-summary-reimport'
+  const fileName = 'synthetic-summary-reimport.eml'
+  incoming.record = {
+    ...incoming.record,
+    id: `${fileHash}:${incoming.record.parserId}`,
+    fileHash,
+    fileName,
+  }
+  incoming.statement = {
+    ...incoming.statement,
+    sourceFileHash: fileHash,
+    sourceFileName: fileName,
+    summary: { ...incoming.statement.summary, ...summary },
+  }
+  incoming.transactions = []
+  incoming.inserted = []
+  return incoming
+}
 
 describe('strict financial amount grammar', () => {
   it.each(MALFORMED)('rejects %s without removing text or guessing separators', (text) => {
@@ -166,5 +197,40 @@ describe('real parser → ingest → persistence financial integrity', () => {
       await persistImportResults([result])
     })()).rejects.toThrow('金额')
     expect(await db.transactions.count()).toBe(0)
+  })
+})
+
+describe('persisting optional summary fields', () => {
+  beforeEach(async () => { await db.delete(); await db.open() })
+
+  it('upgrades a legacy summary when the incoming parser adds adjustment and detail basis', async () => {
+    const stored = demoImportWithSummary()
+    delete stored.statement!.summary.adjustmentMinor
+    delete stored.statement!.summary.detailBasis
+    await persistImportResults([stored])
+
+    await persistImportResults([summaryOnlyReimport(stored, { adjustmentMinor: 0, detailBasis: 'net' })])
+
+    const upgraded = await db.statements.get(stored.statement!.id)
+    expect(upgraded?.summary.adjustmentMinor).toBe(0)
+    expect(upgraded?.summary.detailBasis).toBe('net')
+  })
+
+  it('rejects a changed adjustment when the stored summary has one', async () => {
+    const stored = demoImportWithSummary({ adjustmentMinor: 30, detailBasis: 'gross' })
+    await persistImportResults([stored])
+
+    await expect(
+      persistImportResults([summaryOnlyReimport(stored, { adjustmentMinor: 50 })]),
+    ).rejects.toThrow('同一账期的银行汇总存在冲突')
+  })
+
+  it('rejects a changed detail basis when the stored summary has one', async () => {
+    const stored = demoImportWithSummary({ adjustmentMinor: 0, detailBasis: 'gross' })
+    await persistImportResults([stored])
+
+    await expect(
+      persistImportResults([summaryOnlyReimport(stored, { detailBasis: 'net' })]),
+    ).rejects.toThrow('同一账期的银行汇总存在冲突')
   })
 })

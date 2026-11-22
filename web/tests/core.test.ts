@@ -10,6 +10,9 @@ describe('money: integer minor units only', () => {
     expect(parseAmountToMinor('7,786.93')!.minor).toBe(778693)
     expect(parseAmountToMinor('¥6512.48')!.minor).toBe(651248)
     expect(parseAmountToMinor('CNY 12.34')!.minor).toBe(1234)
+    expect(parseAmountToMinor('174.87/RMB')).toMatchObject({ minor: 17487, currency: 'CNY' })
+    expect(parseAmountToMinor('-69.82/RMB')).toMatchObject({ minor: -6982, currency: 'CNY' })
+    expect(parseAmountToMinor('78,000.00/RMB')).toMatchObject({ minor: 7800000, currency: 'CNY' })
   })
 
   it('honours explicit negative formats', () => {
@@ -17,6 +20,7 @@ describe('money: integer minor units only', () => {
     expect(parseAmountToMinor('45.00-')!.minor).toBe(-4500)
     expect(parseAmountToMinor('(45.00)')!.minor).toBe(-4500)
     expect(parseAmountToMinor('45.00/C')!.minor).toBe(-4500)
+    expect(parseAmountToMinor('45.00/D')!.minor).toBe(4500)
     expect(parseAmountToMinor('45.00CR')!.minor).toBe(-4500)
     expect(parseAmountToMinor('45.67CR')!.minor).toBe(-4567)
   })

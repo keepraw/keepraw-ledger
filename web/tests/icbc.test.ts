@@ -66,6 +66,24 @@ describe('ICBC EML parser', () => {
     expect(summary.currentBalanceMinor).toBe(SYNTHETIC_ICBC.currentBalanceMinor)
   })
 
+  it('normalizes account-balance signs and reconciles the owed balance', () => {
+    const parsed = icbcParser.parse(makeDoc())
+    expect(parsed.summary).toMatchObject({
+      previousBalanceMinor: 500000,
+      newCreditMinor: 325000,
+      newDebitMinor: 410000,
+      currentBalanceMinor: 585000,
+    })
+    const result = ingestParsedStatement(parsed,
+      { fileName: 'synthetic-icbc.eml', fileHash: 'hash-icbc-ingest', fileSize: 1, sourceType: 'eml' }, EMPTY)
+    expect(result.statement!.reconciliation.status).toBe('passed')
+  })
+
+  it('warns when the payment overview differs from the account-balance row', () => {
+    const html = SYNTHETIC_ICBC_HTML.replace('5850.00/RMB', '5800.00/RMB')
+    expect(icbcParser.parse(makeDoc(html)).warnings).toContain('icbc_balance_disagreement')
+  })
+
   it('balances the statement equation', () => {
     const { summary } = icbcParser.parse(makeDoc())
     const computed = summary.previousBalanceMinor! + summary.newDebitMinor! - summary.newCreditMinor!

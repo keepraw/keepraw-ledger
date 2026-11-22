@@ -7,7 +7,7 @@ import type { BankId, Direction, NamedAmount, StatementSummary } from '../core/t
 import { resolveBankAmounts, emptySummary, ParseError, requireTransactionAmount, requireTransactionRow, type BankParser, type ParsedStatement, type ParsedTransaction, type SourceDocument } from './types'
 
 const PARSER_ID = 'icbc_eml'
-const PARSER_VERSION = '1.0.0'
+const PARSER_VERSION = '1.0.1'
 
 /**
  * Industrial and Commercial Bank of China e-mailed HTML statement (GBK).
@@ -61,6 +61,11 @@ export const icbcParser: BankParser = {
     if (summary.previousBalanceMinor === null) warnings.push('missing_previous_balance')
     if (summary.newDebitMinor === null) warnings.push('missing_new_debit')
     if (summary.newCreditMinor === null) warnings.push('missing_new_credit')
+    const accountBalance = summary.components.find((component) => component.label === '本期余额')
+    if (summary.currentBalanceMinor !== null && accountBalance?.minor !== null &&
+      accountBalance?.minor !== undefined && summary.currentBalanceMinor !== accountBalance.minor) {
+      warnings.push('icbc_balance_disagreement')
+    }
 
     return {
       bank: 'icbc' as BankId,
@@ -151,7 +156,7 @@ export function locateTxnTable(doc: SourceDocument): IcbcTxnTable | null {
 }
 
 function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSummary {
-  // Balances carry explicit debt/credit signs; spending and payment totals remain magnitudes.
+  // The account-balance table uses the inverse sign for debt; spending and income remain magnitudes.
   const summary = emptySummary()
   const components: NamedAmount[] = []
   summary.dueDate = dueDate
@@ -217,7 +222,7 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
       const parsedBalance = balanceIndex !== -1 ? parseAmountToMinor(row[balanceIndex] ?? '') : null
       if (!parsedPrev && !parsedIncome && !parsedOutgo && !parsedBalance) continue
       if (parsedPrev && summary.previousBalanceMinor === null) {
-        summary.previousBalanceMinor = parsedPrev.minor
+        summary.previousBalanceMinor = -parsedPrev.minor
         components.push({ label: '上期余额', minor: summary.previousBalanceMinor, currency: 'CNY' })
       }
       if (parsedIncome && summary.newCreditMinor === null) {
@@ -229,11 +234,11 @@ function parseSummary(doc: SourceDocument, dueDate: string | null): StatementSum
         components.push({ label: '本期支出', minor: summary.newDebitMinor, currency: 'CNY' })
       }
       if (parsedBalance) {
-        const balance = parsedBalance.minor
+        const balance = -parsedBalance.minor
         if (summary.currentBalanceMinor === null) {
           summary.currentBalanceMinor = balance
-          components.push({ label: '本期余额', minor: balance, currency: 'CNY' })
         }
+        components.push({ label: '本期余额', minor: balance, currency: 'CNY' })
       }
       break
     }

@@ -70,7 +70,7 @@ export function getStatementCurrency(statement: Statement): string {
  *      (requires both `newDebitMinor` and `newCreditMinor`; missing
  *      `charge`/`interest` are treated as 0, exactly like the existing
  *      balance equation — a missing fee line means "no fee stated").
- *   2. `balance`: `current - previous`
+ *   2. `balance`: `current - previous + adjustment`
  *      (requires both balances; used when the detail split is absent).
  *   3. `none`: no reliable total — caller must report `insufficient`.
  */
@@ -85,7 +85,7 @@ export function getStatementExpectedTotal(statement: Statement): ExpectedTotal {
 
   if (s.previousBalanceMinor !== null && s.currentBalanceMinor !== null) {
     return {
-      expectedMinor: s.currentBalanceMinor - s.previousBalanceMinor,
+      expectedMinor: s.currentBalanceMinor - s.previousBalanceMinor + (s.adjustmentMinor ?? 0),
       currency,
       available: true,
       source: 'balance',
@@ -175,7 +175,7 @@ export function reconcileStatementTransactions(
   }
 
   const differenceMinor = expected.expectedMinor - transactionTotalMinor
-  const directionTotalsMatch = expected.source !== 'detail' ||
+  const directionTotalsMatch = expected.source !== 'detail' || statement.summary.detailBasis === 'net' ||
     (debitTotalMinor === statement.summary.newDebitMinor! + (statement.summary.chargeMinor ?? 0) + (statement.summary.interestMinor ?? 0) &&
       creditTotalMinor === statement.summary.newCreditMinor)
   if (differenceMinor === 0 && directionConflicts === 0 && directionTotalsMatch) {

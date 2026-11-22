@@ -242,6 +242,7 @@ export function ReviewPage() {
                         <SummaryRow label="本期还款及其他贷记" minor={active.summary.newCreditMinor} />
                         <SummaryRow label="费用" minor={active.summary.chargeMinor} />
                         <SummaryRow label="利息" minor={active.summary.interestMinor} />
+                        <SummaryRow label="本期调整金额" minor={active.summary.adjustmentMinor ?? null} />
                         <SummaryRow label="本期应还" minor={active.summary.currentBalanceMinor} strong />
                         <SummaryRow label="最小还款额" minor={active.summary.minimumPaymentMinor} />
                       </tbody>

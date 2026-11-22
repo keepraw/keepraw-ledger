@@ -130,6 +130,8 @@ function buildStatement(plan: DemoPlan, random: () => number): ParsedStatement {
     newCreditMinor,
     chargeMinor,
     interestMinor: 0,
+    adjustmentMinor: 0,
+    detailBasis: 'gross',
     currentBalanceMinor,
     minimumPaymentMinor: Math.max(1000, Math.round(currentBalanceMinor * 0.05)),
     dueDate: plan.dueDate,

@@ -16,8 +16,9 @@ const cases = [
       .replaceAll('<td>2300.00</td>', `<td>${current.toFixed(2)}</td>`) },
   { bank: 'icbc', previous: 500000, debit: 410000, credit: 325000, source: SYNTHETIC_ICBC_HTML,
     signed: (previous: number, current: number) => SYNTHETIC_ICBC_HTML
-      .replaceAll('<td>5000.00</td><td>3250.00</td>', `<td>${previous.toFixed(2)}</td><td>3250.00</td>`)
-      .replaceAll('<td>5850.00</td>', `<td>${current.toFixed(2)}</td>`) },
+      .replace('<td>-5000.00/RMB</td>', `<td>${(-previous).toFixed(2)}/RMB</td>`)
+      .replace('<td>5850.00/RMB</td>', `<td>${current.toFixed(2)}/RMB</td>`)
+      .replace('<td>-5850.00/RMB</td>', `<td>${(-current).toFixed(2)}/RMB</td>`) },
   { bank: 'citic', previous: 1000000, debit: 210000, credit: 1000000, source: SYNTHETIC_CITIC_HTML,
     signed: (previous: number, current: number) => SYNTHETIC_CITIC_HTML
       .replace('<td>CNY 2100.00</td>', `<td>CNY ${current.toFixed(2)}</td>`)
@@ -85,7 +86,7 @@ it('CCB fallback New Balance also preserves the explicit credit sign and stays i
   expect(result.statement!.reconciliation.status).toBe('insufficient')
 })
 
-it('ICBC balance table fallback retains negative current balance without the payment overview', async () => {
+it('ICBC balance-table fallback maps a positive account balance to a negative credit balance', async () => {
   const source = cases[1].signed(-5000, -4150).replace(/<table>\s*<tr><td>卡号后四位<\/td><td>币种<\/td>[\s\S]*?<\/table>/, '')
   const result = await ingest(source, 'icbc-fallback')
   expect(result.statement!.summary.currentBalanceMinor).toBe(-415000)

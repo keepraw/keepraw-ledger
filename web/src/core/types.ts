@@ -202,6 +202,10 @@ export interface StatementSummary {
   chargeMinor: number | null
   /** Interest / 利息. */
   interestMinor: number | null
+  /** 本期调整金额: signed; positive reduces the balance. */
+  adjustmentMinor?: number | null
+  /** Whether detail totals are gross rows or a bank-netted summary. Absent means gross. */
+  detailBasis?: 'gross' | 'net'
   /** 本期应还 / Statement Balance. */
   currentBalanceMinor: number | null
   minimumPaymentMinor: number | null

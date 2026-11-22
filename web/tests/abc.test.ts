@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { abcParser, locateCycle, locateTxnHeader, parseSlashAmount, resolveAbcDate } from '../src/parsers/abc'
 import { extractTables, extractText, sanitizeHtml } from '../src/parsers/html'
 import type { SourceDocument } from '../src/parsers/types'
-import { SYNTHETIC_ABC, SYNTHETIC_ABC_HTML } from './fixtures/abcEml'
+import {
+  SYNTHETIC_ABC,
+  SYNTHETIC_ABC_ADJUSTMENT_8_HTML,
+  SYNTHETIC_ABC_ADJUSTMENT_HTML,
+  SYNTHETIC_ABC_HTML,
+  SYNTHETIC_ABC_USD_HTML,
+} from './fixtures/abcEml'
 import { ingestParsedStatement, type ExistingSnapshot } from '../src/core/ingest'
 
 function makeDoc(html = SYNTHETIC_ABC_HTML): SourceDocument {
@@ -56,6 +62,37 @@ describe('ABC EML parser', () => {
     expect(summary.newCreditMinor).toBe(SYNTHETIC_ABC.newCreditMinor)
     expect(summary.newDebitMinor).toBe(SYNTHETIC_ABC.newDebitMinor)
     expect(summary.currentBalanceMinor).toBe(SYNTHETIC_ABC.currentBalanceMinor)
+  })
+
+  it('reconciles a signed adjustment and mismatches when it changes by one cent', () => {
+    const html = SYNTHETIC_ABC_ADJUSTMENT_HTML
+    const parsed = abcParser.parse(makeDoc(html))
+    expect(parsed.summary.adjustmentMinor).toBe(3000)
+    expect(ingestParsedStatement(parsed,
+      { fileName: 'synthetic-abc-adjustment.eml', fileHash: 'abc-adjustment', fileSize: 1, sourceType: 'eml' }, EMPTY)
+      .statement!.reconciliation.status).toBe('passed')
+
+    const changed = abcParser.parse(makeDoc(html.replace('30.00</td>', '30.01</td>')))
+    expect(changed.summary.adjustmentMinor).toBe(3001)
+    expect(ingestParsedStatement(changed,
+      { fileName: 'synthetic-abc-adjustment-changed.eml', fileHash: 'abc-adjustment-changed', fileSize: 1, sourceType: 'eml' }, EMPTY)
+      .statement!.reconciliation.status).toBe('mismatch')
+  })
+
+  it('reads signed adjustment from the compressed eight-value summary row', () => {
+    const parsed = abcParser.parse(makeDoc(SYNTHETIC_ABC_ADJUSTMENT_8_HTML))
+    expect(parsed.summary.adjustmentMinor).toBe(3000)
+    expect(ingestParsedStatement(parsed,
+      { fileName: 'synthetic-abc-adjustment-8.eml', fileHash: 'abc-adjustment-8', fileSize: 1, sourceType: 'eml' }, EMPTY)
+      .statement!.reconciliation.status).toBe('passed')
+  })
+
+  it('uses the equation row currency for all ABC summary components', () => {
+    const parsed = abcParser.parse(makeDoc(SYNTHETIC_ABC_USD_HTML))
+    expect(parsed.summary.components.every((component) => component.currency === 'USD')).toBe(true)
+    const result = ingestParsedStatement(parsed,
+      { fileName: 'synthetic-abc-usd.eml', fileHash: 'abc-usd', fileSize: 1, sourceType: 'eml' }, EMPTY)
+    expect(result.statement!.reconciliation.status).toBe('passed')
   })
 
   it('balances the statement equation', () => {

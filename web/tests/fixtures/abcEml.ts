@@ -59,6 +59,23 @@ export const SYNTHETIC_ABC_HTML = `
 </html>
 `
 
+export const SYNTHETIC_ABC_ADJUSTMENT_HTML = SYNTHETIC_ABC_HTML
+  .replaceAll('<td>2300.00</td>', '<td>2270.00</td>')
+  .replace('<td>7200.00</td><td>-</td><td>0.00</td>', '<td>7200.00</td><td>-</td><td>30.00</td>')
+
+export const SYNTHETIC_ABC_ADJUSTMENT_8_HTML = SYNTHETIC_ABC_ADJUSTMENT_HTML.replace(
+  '<tr><td>CNY</td><td>2270.00</td><td>-</td><td>0.00</td><td>=</td><td>3000.00</td><td>-</td><td>0.00</td><td>+</td><td>6500.00</td><td>-</td><td>7200.00</td><td>-</td><td>30.00</td></tr>',
+  '<tr><td>CNY</td><td>2270.00</td><td>0.00</td><td>3000.00</td><td>0.00</td><td>6500.00</td><td>7200.00</td><td>30.00</td></tr>',
+)
+
+export const SYNTHETIC_ABC_USD_HTML = SYNTHETIC_ABC_HTML
+  .replace(
+    '<table><tr><td>本期应还款额(欠款为-) New Balance</td></tr></table>\n    <table><tr><td>人民币(CNY)</td><td>2300.00</td></tr></table>',
+    '<table><tr><td>本期应还款额</td><td>2300.00</td></tr></table>',
+  )
+  .replace('<td>CNY</td><td>2300.00</td>', '<td>美元(USD)</td><td>2300.00</td>')
+  .replaceAll('/CNY</td>', '/USD</td>')
+
 export const SYNTHETIC_ABC = {
   cardLast4: '9876',
   cycleStart: '2026-07-15',

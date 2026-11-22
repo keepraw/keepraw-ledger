@@ -7,6 +7,7 @@ import {
   reconcileStatementTransactions,
   toReconciliationResult,
 } from '../src/core/reconciliation'
+import { reconcileStatement } from '../src/core/reconcile'
 import { buildDataQualityReport } from '../src/core/dataQuality'
 import { emptySummary } from '../src/parsers/types'
 import type { Statement, StatementSummary, Transaction } from '../src/core/types'
@@ -141,6 +142,72 @@ describe('reconciliation pure function', () => {
     const result = reconcileStatementTransactions(statement, [makeTx('stmt-balance', 20000)])
     expect(result.status).toBe('passed')
     expect(result.expectedSource).toBe('balance')
+  })
+
+  it('includes the signed adjustment when deriving transactions from balances', () => {
+    const statement = makeStatement('stmt-adjustment', summaryWith({
+      previousBalanceMinor: -12013,
+      currentBalanceMinor: -8083,
+      adjustmentMinor: 30,
+    }))
+    expect(getStatementExpectedTotal(statement)).toMatchObject({ source: 'balance', expectedMinor: 3960 })
+  })
+
+  it('compares net transaction totals for bank-netted detail summaries', () => {
+    const statement = makeStatement('stmt-net', summaryWith({
+      previousBalanceMinor: 0,
+      currentBalanceMinor: 50,
+      newDebitMinor: 100,
+      newCreditMinor: 50,
+      detailBasis: 'net',
+      components: [{ label: '本期新增金额', minor: 100, currency: 'CNY' }],
+    }))
+    const result = reconcileStatementTransactions(statement, [
+      makeTx('stmt-net', 120),
+      makeTx('stmt-net', -70),
+    ])
+    expect(result.status).toBe('passed')
+  })
+})
+
+describe('statement reconciliation detail checks', () => {
+  it('subtracts signed adjustments from the balance equation', () => {
+    const summary = summaryWith({
+      previousBalanceMinor: -12013,
+      newDebitMinor: 3960,
+      newCreditMinor: 0,
+      currentBalanceMinor: -8083,
+      adjustmentMinor: 30,
+      components: [{ label: '余额', minor: -8083, currency: 'CNY' }],
+    })
+    const result = reconcileStatement({ summary, transactions: [makeTx('stmt-adjustment-detail', 3960)] })
+    expect(result.status).toBe('passed')
+    expect(result.checks.find((check) => check.id === 'balance_equation')?.status).toBe('passed')
+  })
+
+  it('reconciles net-only details and marks missing summary inputs missing', () => {
+    const summary = summaryWith({
+      previousBalanceMinor: 0,
+      newDebitMinor: 100,
+      newCreditMinor: 50,
+      currentBalanceMinor: 50,
+      detailBasis: 'net',
+      components: [{ label: '本期新增金额', minor: 100, currency: 'CNY' }],
+    })
+    const result = reconcileStatement({ summary, transactions: [
+      makeTx('stmt-net-detail', 120),
+      makeTx('stmt-net-detail', -70),
+    ] })
+    expect(result.status).toBe('passed')
+    expect(result.checks.find((check) => check.id === 'net_detail')?.status).toBe('passed')
+    expect(result.checks.map((check) => check.id)).not.toContain('debit_detail')
+    expect(result.checks.map((check) => check.id)).not.toContain('credit_detail')
+
+    const missing = reconcileStatement({
+      summary: { ...summary, newCreditMinor: null },
+      transactions: [makeTx('stmt-net-missing', 120), makeTx('stmt-net-missing', -70)],
+    })
+    expect(missing.checks.find((check) => check.id === 'net_detail')?.status).toBe('missing')
   })
 })
 

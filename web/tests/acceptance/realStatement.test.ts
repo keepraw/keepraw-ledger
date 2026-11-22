@@ -349,18 +349,16 @@ describe.skipIf(!abcAvailable)('Case E - real ABC EML', () => {
       .reduce((sum, tx) => sum + tx.settlementAmountMinor, 0)
     expect(debits).toBe(summary.newDebitMinor)
 
-    // ABC carries 本期调整金额 outside the transaction detail tables. Detail
-    // totals must match; the balance equation holds up to that adjustment,
-    // which is recorded as a summary component for review.
-    const adjustment =
-      summary.components.find((entry) => /本期调整金额/.test(entry.label))?.minor ?? 0
+    // ABC carries signed 本期调整金额 outside the transaction detail tables.
+    const adjustment = summary.adjustmentMinor ?? 0
     const computed =
       summary.previousBalanceMinor! +
       summary.newDebitMinor! +
       (summary.chargeMinor ?? 0) +
       (summary.interestMinor ?? 0) -
-      summary.newCreditMinor!
-    expect(computed - summary.currentBalanceMinor!).toBe(adjustment)
+      summary.newCreditMinor! -
+      adjustment
+    expect(computed).toBe(summary.currentBalanceMinor)
 
     const result = reconcileStatement({
       summary,
@@ -375,12 +373,7 @@ describe.skipIf(!abcAvailable)('Case E - real ABC EML', () => {
       result.status,
       result.checks.map((check) => `${check.id}:${check.status}`).join(','),
     )
-    if (adjustment === 0) {
-      expect(result.status).toBe('passed')
-    } else {
-      // Non-zero adjustments have no detail rows; they correctly route to review.
-      expect(result.status).toBe('mismatch')
-    }
+    expect(result.status).toBe('passed')
   })
 })
 

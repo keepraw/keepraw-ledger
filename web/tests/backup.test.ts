@@ -140,6 +140,22 @@ describe('JSON data backup', () => {
     }
     expect(validateBackup(payload)).toBe(true)
   })
+
+  it('accepts summaries with or without optional adjustment and detail-basis fields', async () => {
+    await seedDemoWithOneAttachment()
+    const payload = await exportDataBackup()
+    const oldPayload = structuredClone(payload)
+    for (const statement of oldPayload.statements) {
+      delete statement.summary.adjustmentMinor
+      delete statement.summary.detailBasis
+    }
+    expect(validateBackup(oldPayload)).toBe(true)
+
+    const currentPayload = structuredClone(payload)
+    currentPayload.statements[0]!.summary.adjustmentMinor = 0
+    currentPayload.statements[0]!.summary.detailBasis = 'net'
+    expect(validateBackup(currentPayload)).toBe(true)
+  })
 })
 
 describe('ZIP full-archive backup', () => {

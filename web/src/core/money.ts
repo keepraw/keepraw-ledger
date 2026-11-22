@@ -96,7 +96,7 @@ export interface ParsedAmount {
 }
 
 const CURRENCY_PREFIX = /^(人民币|美元|港币|港元|欧元|日元|英镑|[￥¥$€£]|[A-Z]{3}(?=\s|[-+(\d]))\s*/i
-const CURRENCY_SUFFIX = /\s*(人民币|美元|港币|港元|欧元|日元|英镑|[￥¥$€£]|[A-Z]{3})$/i
+const CURRENCY_SUFFIX = /\s*\/?\s*(人民币|美元|港币|港元|欧元|日元|英镑|[￥¥$€£]|[A-Z]{3})$/i
 
 /**
  * Parse a numeric Excel cell or bank-provided amount string into signed minor units.
